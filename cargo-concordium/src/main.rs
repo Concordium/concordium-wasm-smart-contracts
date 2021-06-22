@@ -1,7 +1,9 @@
 use crate::{build::*, schema_json::*};
 use anyhow::{bail, ensure, Context};
 use clap::AppSettings;
-use concordium_contracts_common::{from_bytes, to_bytes, Amount, OwnedPolicy};
+use concordium_contracts_common::{
+    from_bytes, to_bytes, AccountAddress, Amount, ChainMetadata, OwnedPolicy,
+};
 use std::{fs, fs::File, io::Read, path::PathBuf};
 use structopt::StructOpt;
 use wasm_chain_integration::*;
@@ -346,10 +348,13 @@ pub fn main() -> anyhow::Result<()> {
                     ref context,
                     ..
                 } => {
-                    let init_ctx: InitContext = {
-                        let ctx_file = fs::read(context).context("Could not open context file.")?;
-                        serde_json::from_slice(&ctx_file)
-                            .context("Could not parse the init context JSON.")?
+                    let init_ctx: InitContextOpt = {
+                        if let Ok(ctx_file) = fs::read(context) {
+                            serde_json::from_slice(&ctx_file)
+                                .context("Could not parse the init context JSON.")?
+                        } else {
+                            InitContextOpt::new()
+                        }
                     };
                     let name = format!("init_{}", contract_name);
                     let res = invoke_init_with_metering_from_source(
@@ -608,6 +613,23 @@ fn print_contract_schema(
                 to_bytes(param_type).len(),
                 width = colon_position + 2
             );
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct InitContextOpt<Policies = Vec<OwnedPolicy>> {
+    pub metadata:        Option<ChainMetadata>,
+    pub init_origin:     Option<AccountAddress>,
+    pub sender_policies: Option<Policies>,
+}
+
+impl InitContextOpt {
+    pub fn new() -> Self {
+        Self {
+            metadata:        None,
+            init_origin:     None,
+            sender_policies: None,
         }
     }
 }
