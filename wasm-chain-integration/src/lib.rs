@@ -623,19 +623,24 @@ pub type Parameter<'a> = &'a [u8];
 pub type PolicyBytes<'a> = &'a [u8];
 
 /// Invokes an init-function from a given artifact
-pub fn invoke_init<C: RunnableCode, A: AsRef<[u8]>, P: SerialPolicies<A>>(
+pub fn invoke_init<
+    C: RunnableCode,
+    A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasInitContext<P>,
+>(
     artifact: &Artifact<ProcessedImports, C>,
     amount: u64,
-    init_ctx: InitContext<P>,
+    init_ctx: Ctx,
     init_name: &str,
     param: Parameter,
     energy: u64,
 ) -> ExecResult<InitResult> {
-    let sender_policies_aux = init_ctx.sender_policies.policies_to_bytes();
+    let sender_policies_aux = init_ctx.sender_policies().policies_to_bytes();
     let init_ctx = InitContext {
         sender_policies: sender_policies_aux.as_ref(),
-        metadata:        init_ctx.metadata,
-        init_origin:     init_ctx.init_origin,
+        metadata:        init_ctx.metadata().clone(),
+        init_origin:     init_ctx.init_origin(),
     };
     let mut host = InitHost {
         energy: Energy {
@@ -683,10 +688,10 @@ pub fn invoke_init<C: RunnableCode, A: AsRef<[u8]>, P: SerialPolicies<A>>(
 
 /// Invokes an init-function from a given artifact *bytes*
 #[cfg_attr(not(feature = "fuzz-coverage"), inline)]
-pub fn invoke_init_from_artifact<A: AsRef<[u8]>, P: SerialPolicies<A>>(
+pub fn invoke_init_from_artifact<A: AsRef<[u8]>, P: SerialPolicies<A>, Ctx: HasInitContext<P>>(
     artifact_bytes: &[u8],
     amount: u64,
-    init_ctx: InitContext<P>,
+    init_ctx: Ctx,
     init_name: &str,
     parameter: Parameter,
     energy: u64,
@@ -697,10 +702,10 @@ pub fn invoke_init_from_artifact<A: AsRef<[u8]>, P: SerialPolicies<A>>(
 
 /// Invokes an init-function from Wasm module bytes
 #[cfg_attr(not(feature = "fuzz-coverage"), inline)]
-pub fn invoke_init_from_source<A: AsRef<[u8]>, P: SerialPolicies<A>>(
+pub fn invoke_init_from_source<A: AsRef<[u8]>, P: SerialPolicies<A>, Ctx: HasInitContext<P>>(
     source_bytes: &[u8],
     amount: u64,
-    init_ctx: InitContext<P>,
+    init_ctx: Ctx,
     init_name: &str,
     parameter: Parameter,
     energy: u64,
@@ -709,28 +714,32 @@ pub fn invoke_init_from_source<A: AsRef<[u8]>, P: SerialPolicies<A>>(
     invoke_init(&artifact, amount, init_ctx, init_name, parameter, energy)
 }
 
-trait HasInitContext<Policies = Vec<OwnedPolicy>> {
+pub trait HasInitContext<Policies = Vec<OwnedPolicy>> {
     fn metadata(&self) -> &ChainMetadata;
-    fn init_origin(&self) -> &AccountAddress;
-    fn policies(&self) -> &Policies;
+    fn init_origin(&self) -> AccountAddress;
+    fn sender_policies(&self) -> &Policies;
 }
 
-impl HasInitContext for InitContext {
+impl<Policies> HasInitContext<Policies> for InitContext<Policies> {
     fn metadata(&self) -> &ChainMetadata { &self.metadata }
 
-    fn init_origin(&self) -> &AccountAddress { &self.init_origin }
+    fn init_origin(&self) -> AccountAddress { self.init_origin }
 
-    fn policies(&self) -> &Vec<Policy<Vec<(AttributeTag, Vec<u8>)>>> { &self.sender_policies }
+    fn sender_policies(&self) -> &Policies { &self.sender_policies }
 }
 
 /// Same as `invoke_init_from_source`, except that the module has cost
 /// accounting instructions inserted before the init function is called.
 /// metering.
 #[cfg_attr(not(feature = "fuzz-coverage"), inline)]
-pub fn invoke_init_with_metering_from_source<A: AsRef<[u8]>, P: SerialPolicies<A>>(
+pub fn invoke_init_with_metering_from_source<
+    A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasInitContext<P>,
+>(
     source_bytes: &[u8],
     amount: u64,
-    init_ctx: InitContext<P>,
+    init_ctx: Ctx,
     init_name: &str,
     parameter: Parameter,
     energy: u64,
