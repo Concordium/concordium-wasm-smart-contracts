@@ -709,6 +709,20 @@ pub fn invoke_init_from_source<A: AsRef<[u8]>, P: SerialPolicies<A>>(
     invoke_init(&artifact, amount, init_ctx, init_name, parameter, energy)
 }
 
+trait HasInitContext<Policies = Vec<OwnedPolicy>> {
+    fn metadata(&self) -> &ChainMetadata;
+    fn init_origin(&self) -> &AccountAddress;
+    fn policies(&self) -> &Policies;
+}
+
+impl HasInitContext for InitContext {
+    fn metadata(&self) -> &ChainMetadata { &self.metadata }
+
+    fn init_origin(&self) -> &AccountAddress { &self.init_origin }
+
+    fn policies(&self) -> &Vec<Policy<Vec<(AttributeTag, Vec<u8>)>>> { &self.sender_policies }
+}
+
 /// Same as `invoke_init_from_source`, except that the module has cost
 /// accounting instructions inserted before the init function is called.
 /// metering.
