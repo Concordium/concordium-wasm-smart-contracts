@@ -832,7 +832,7 @@ fn reason_from_wasm_error_code(n: i32) -> ExecResult<i32> {
 }
 
 /// A helper trait to support invoking contracts when the policy is given as a
-/// byte array, as well asd when it is given in structured form, such as
+/// byte array, as well as when it is given in structured form, such as
 /// Vec<OwnedPolicy>.
 pub trait SerialPolicies<R: AsRef<[u8]>> {
     fn policies_to_bytes(&self) -> R;
