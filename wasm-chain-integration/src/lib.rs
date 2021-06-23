@@ -325,8 +325,8 @@ where
     fn logs(&mut self) -> &mut Logs;
     fn state(&mut self) -> &mut State;
     fn param(&self) -> &[u8];
-    fn policies(&self) -> &P;
-    fn metadata(&self) -> &ChainMetadata;
+    fn policies(&self) -> ExecResult<&P>;
+    fn metadata(&self) -> ExecResult<&ChainMetadata>;
 }
 
 impl<'a, Ctx, P, A> HasCommon<P, A> for InitHost<'a, Ctx, P, A>
@@ -343,9 +343,9 @@ where
 
     fn param(&self) -> &[u8] { &self.param }
 
-    fn metadata(&self) -> &ChainMetadata { &self.init_ctx.metadata() }
+    fn metadata(&self) -> ExecResult<&ChainMetadata> { self.init_ctx.metadata() }
 
-    fn policies(&self) -> &P { self.init_ctx.sender_policies() }
+    fn policies(&self) -> ExecResult<&P> { self.init_ctx.sender_policies() }
 }
 
 impl<'a, Ctx, P, A> HasCommon<P, A> for ReceiveHost<'a, Ctx, P, A>
@@ -362,9 +362,49 @@ where
 
     fn param(&self) -> &[u8] { &self.param }
 
-    fn metadata(&self) -> &ChainMetadata { &self.receive_ctx.metadata() }
+    fn metadata(&self) -> ExecResult<&ChainMetadata> { self.receive_ctx.metadata() }
 
-    fn policies(&self) -> &P { self.receive_ctx.sender_policies() }
+    fn policies(&self) -> ExecResult<&P> { self.receive_ctx.sender_policies() }
+}
+
+pub trait HasInitContext<Policies = Vec<OwnedPolicy>> {
+    fn metadata(&self) -> ExecResult<&ChainMetadata>;
+    fn init_origin(&self) -> ExecResult<AccountAddress>;
+    fn sender_policies(&self) -> ExecResult<&Policies>;
+}
+
+impl<Policies> HasInitContext<Policies> for InitContext<Policies> {
+    fn metadata(&self) -> ExecResult<&ChainMetadata> { Ok(&self.metadata) }
+
+    fn init_origin(&self) -> ExecResult<AccountAddress> { Ok(self.init_origin) }
+
+    fn sender_policies(&self) -> ExecResult<&Policies> { Ok(&self.sender_policies) }
+}
+
+pub trait HasReceiveContext<Policies = Vec<OwnedPolicy>> {
+    fn metadata(&self) -> ExecResult<&ChainMetadata>;
+    fn invoker(&self) -> ExecResult<AccountAddress>;
+    fn self_address(&self) -> ExecResult<ContractAddress>;
+    fn self_balance(&self) -> ExecResult<Amount>;
+    fn sender(&self) -> ExecResult<Address>;
+    fn owner(&self) -> ExecResult<AccountAddress>;
+    fn sender_policies(&self) -> ExecResult<&Policies>;
+}
+
+impl<Policies> HasReceiveContext<Policies> for ReceiveContext<Policies> {
+    fn metadata(&self) -> ExecResult<&ChainMetadata> { Ok(&self.metadata) }
+
+    fn invoker(&self) -> ExecResult<AccountAddress> { Ok(self.invoker) }
+
+    fn self_address(&self) -> ExecResult<ContractAddress> { Ok(self.self_address) }
+
+    fn self_balance(&self) -> ExecResult<Amount> { Ok(self.self_balance) }
+
+    fn sender(&self) -> ExecResult<Address> { Ok(self.sender) }
+
+    fn owner(&self) -> ExecResult<AccountAddress> { Ok(self.owner) }
+
+    fn sender_policies(&self) -> ExecResult<&Policies> { Ok(&self.sender_policies) }
 }
 
 fn call_common<C: HasCommon<P, A>, P: SerialPolicies<A>, A: AsRef<[u8]>>(
@@ -400,7 +440,7 @@ fn call_common<C: HasCommon<P, A>, P: SerialPolicies<A>, A: AsRef<[u8]>>(
             let start = unsafe { stack.pop_u32() } as usize;
             let write_end = start + length as usize; // this cannot overflow on 64-bit machines.
             ensure!(write_end <= memory.len(), "Illegal memory access.");
-            let policies = host.policies().policies_to_bytes();
+            let policies = host.policies()?.policies_to_bytes();
             let policies_bytes = policies.as_ref();
             let end = std::cmp::min(offset + length as usize, policies_bytes.len());
             ensure!(offset <= end, "Attempting to read non-existent policy.");
@@ -463,7 +503,7 @@ fn call_common<C: HasCommon<P, A>, P: SerialPolicies<A>, A: AsRef<[u8]>>(
         CommonFunc::GetSlotTime => {
             // the cost of this function is adequately reflected by the base cost of a
             // function call so we do not charge extra.
-            stack.push_value(host.metadata().slot_time.timestamp_millis());
+            stack.push_value(host.metadata()?.slot_time.timestamp_millis());
         }
     }
     Ok(())
@@ -506,7 +546,8 @@ where
             ImportFunc::InitOnly(InitOnlyFunc::GetInitOrigin) => {
                 let start = unsafe { stack.pop_u32() } as usize;
                 ensure!(start + 32 <= memory.len(), "Illegal memory access for init origin.");
-                (&mut memory[start..start + 32]).write_all(self.init_ctx.init_origin().as_ref())?;
+                (&mut memory[start..start + 32])
+                    .write_all(self.init_ctx.init_origin()?.as_ref())?;
             }
             ImportFunc::ReceiveOnly(_) => {
                 bail!("Not implemented for init {:#?}.", f);
@@ -585,31 +626,31 @@ where
             ReceiveOnlyFunc::GetReceiveInvoker => {
                 let start = unsafe { stack.pop_u32() } as usize;
                 ensure!(start + 32 <= memory.len(), "Illegal memory access for receive invoker.");
-                (&mut memory[start..start + 32]).write_all(self.receive_ctx.invoker().as_ref())?;
+                (&mut memory[start..start + 32]).write_all(self.receive_ctx.invoker()?.as_ref())?;
             }
             ReceiveOnlyFunc::GetReceiveSelfAddress => {
                 let start = unsafe { stack.pop_u32() } as usize;
                 ensure!(start + 16 <= memory.len(), "Illegal memory access for receive owner.");
                 (&mut memory[start..start + 8])
-                    .write_all(&self.receive_ctx.self_address().index.to_le_bytes())?;
+                    .write_all(&self.receive_ctx.self_address()?.index.to_le_bytes())?;
                 (&mut memory[start + 8..start + 16])
-                    .write_all(&self.receive_ctx.self_address().subindex.to_le_bytes())?;
+                    .write_all(&self.receive_ctx.self_address()?.subindex.to_le_bytes())?;
             }
             ReceiveOnlyFunc::GetReceiveSelfBalance => {
-                stack.push_value(self.receive_ctx.self_balance().micro_gtu);
+                stack.push_value(self.receive_ctx.self_balance()?.micro_gtu);
             }
             ReceiveOnlyFunc::GetReceiveSender => {
                 let start = unsafe { stack.pop_u32() } as usize;
                 ensure!(start < memory.len(), "Illegal memory access for receive sender.");
                 self.receive_ctx
-                    .sender()
+                    .sender()?
                     .serial::<&mut [u8]>(&mut &mut memory[start..])
                     .map_err(|_| anyhow!("Memory out of bounds."))?;
             }
             ReceiveOnlyFunc::GetReceiveOwner => {
                 let start = unsafe { stack.pop_u32() } as usize;
                 ensure!(start + 32 <= memory.len(), "Illegal memory access for receive owner.");
-                (&mut memory[start..start + 32]).write_all(self.receive_ctx.owner().as_ref())?;
+                (&mut memory[start..start + 32]).write_all(self.receive_ctx.owner()?.as_ref())?;
             }
         }
         Ok(())
@@ -756,46 +797,6 @@ pub fn invoke_init_from_source<A: AsRef<[u8]>, P: SerialPolicies<A>, Ctx: HasIni
 ) -> ExecResult<InitResult> {
     let artifact = utils::instantiate(&ConcordiumAllowedImports, source_bytes)?;
     invoke_init(&artifact, amount, init_ctx, init_name, parameter, energy)
-}
-
-pub trait HasInitContext<Policies = Vec<OwnedPolicy>> {
-    fn metadata(&self) -> &ChainMetadata;
-    fn init_origin(&self) -> AccountAddress;
-    fn sender_policies(&self) -> &Policies;
-}
-
-impl<Policies> HasInitContext<Policies> for InitContext<Policies> {
-    fn metadata(&self) -> &ChainMetadata { &self.metadata }
-
-    fn init_origin(&self) -> AccountAddress { self.init_origin }
-
-    fn sender_policies(&self) -> &Policies { &self.sender_policies }
-}
-
-pub trait HasReceiveContext<Policies = Vec<OwnedPolicy>> {
-    fn metadata(&self) -> &ChainMetadata;
-    fn invoker(&self) -> AccountAddress;
-    fn self_address(&self) -> ContractAddress;
-    fn self_balance(&self) -> Amount;
-    fn sender(&self) -> Address;
-    fn owner(&self) -> AccountAddress;
-    fn sender_policies(&self) -> &Policies;
-}
-
-impl<Policies> HasReceiveContext<Policies> for ReceiveContext<Policies> {
-    fn metadata(&self) -> &ChainMetadata { &self.metadata }
-
-    fn invoker(&self) -> AccountAddress { self.invoker }
-
-    fn self_address(&self) -> ContractAddress { self.self_address }
-
-    fn self_balance(&self) -> Amount { self.self_balance }
-
-    fn sender(&self) -> Address { self.sender }
-
-    fn owner(&self) -> AccountAddress { self.owner }
-
-    fn sender_policies(&self) -> &Policies { &self.sender_policies }
 }
 
 /// Same as `invoke_init_from_source`, except that the module has cost
