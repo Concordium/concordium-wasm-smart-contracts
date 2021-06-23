@@ -271,7 +271,13 @@ impl State {
     }
 }
 
-pub struct InitHost<'a> {
+pub struct InitHost<'a, Ctx, P, A>
+where
+    A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasInitContext<P>, {
+    ref_type:              std::marker::PhantomData<A>,
+    policy_type:           std::marker::PhantomData<P>,
     /// Remaining energy for execution.
     pub energy:            Energy,
     /// Remaining amount of activation frames.
@@ -284,7 +290,7 @@ pub struct InitHost<'a> {
     /// The parameter to the init method.
     pub param:             &'a [u8],
     /// The init context for this invocation.
-    pub init_ctx:          &'a InitContext<&'a [u8]>,
+    pub init_ctx:          &'a Ctx,
 }
 
 pub struct ReceiveHost<'a> {
@@ -305,16 +311,24 @@ pub struct ReceiveHost<'a> {
     pub receive_ctx:       &'a ReceiveContext<&'a [u8]>,
 }
 
-pub trait HasCommon {
+pub trait HasCommon<P, A>
+where
+    P: SerialPolicies<A>,
+    A: AsRef<[u8]>, {
     fn energy(&mut self) -> &mut Energy;
     fn logs(&mut self) -> &mut Logs;
     fn state(&mut self) -> &mut State;
     fn param(&self) -> &[u8];
-    fn policies_bytes(&self) -> &[u8];
+    fn policies(&self) -> &P;
     fn metadata(&self) -> &ChainMetadata;
 }
 
-impl<'a> HasCommon for InitHost<'a> {
+impl<'a, Ctx, P, A> HasCommon<P, A> for InitHost<'a, Ctx, P, A>
+where
+    A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasInitContext<P>,
+{
     fn energy(&mut self) -> &mut Energy { &mut self.energy }
 
     fn logs(&mut self) -> &mut Logs { &mut self.logs }
@@ -323,12 +337,16 @@ impl<'a> HasCommon for InitHost<'a> {
 
     fn param(&self) -> &[u8] { &self.param }
 
-    fn metadata(&self) -> &ChainMetadata { &self.init_ctx.metadata }
+    fn metadata(&self) -> &ChainMetadata { &self.init_ctx.metadata() }
 
-    fn policies_bytes(&self) -> &[u8] { &self.init_ctx.sender_policies }
+    fn policies(&self) -> &P { self.init_ctx.sender_policies() }
 }
 
-impl<'a> HasCommon for ReceiveHost<'a> {
+impl<'a, P, A> HasCommon<P, A> for ReceiveHost<'a>
+where
+    P: SerialPolicies<A>,
+    A: AsRef<[u8]>,
+{
     fn energy(&mut self) -> &mut Energy { &mut self.energy }
 
     fn logs(&mut self) -> &mut Logs { &mut self.logs }
@@ -339,10 +357,12 @@ impl<'a> HasCommon for ReceiveHost<'a> {
 
     fn metadata(&self) -> &ChainMetadata { &self.receive_ctx.metadata }
 
-    fn policies_bytes(&self) -> &[u8] { &self.receive_ctx.sender_policies }
+    fn policies(&self) -> &P {
+        todo!();
+    } //&self.receive_ctx.sender_policies }
 }
 
-fn call_common<C: HasCommon>(
+fn call_common<C: HasCommon<P, A>, P: SerialPolicies<A>, A: AsRef<[u8]>>(
     host: &mut C,
     f: CommonFunc,
     memory: &mut Vec<u8>,
@@ -375,9 +395,10 @@ fn call_common<C: HasCommon>(
             let start = unsafe { stack.pop_u32() } as usize;
             let write_end = start + length as usize; // this cannot overflow on 64-bit machines.
             ensure!(write_end <= memory.len(), "Illegal memory access.");
-            let end = std::cmp::min(offset + length as usize, host.policies_bytes().len());
+            let policies_bytes = host.policies().policies_to_bytes().as_ref();
+            let end = std::cmp::min(offset + length as usize, policies_bytes.len());
             ensure!(offset <= end, "Attempting to read non-existent policy.");
-            let amt = (&mut memory[start..write_end]).write(&host.policies_bytes()[offset..end])?;
+            let amt = (&mut memory[start..write_end]).write(&policies_bytes[offset..end])?;
             stack.push_value(amt as u32);
         }
         CommonFunc::LogEvent => {
@@ -442,7 +463,12 @@ fn call_common<C: HasCommon>(
     Ok(())
 }
 
-impl<'a> machine::Host<ProcessedImports> for InitHost<'a> {
+impl<'a, Ctx, P, A> machine::Host<ProcessedImports> for InitHost<'a, Ctx, P, A>
+where
+    A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasInitContext<P>,
+{
     #[cfg_attr(not(feature = "fuzz-coverage"), inline(always))]
     fn tick_initial_memory(&mut self, num_pages: u32) -> machine::RunResult<()> {
         self.energy.charge_memory_alloc(num_pages)
@@ -474,7 +500,7 @@ impl<'a> machine::Host<ProcessedImports> for InitHost<'a> {
             ImportFunc::InitOnly(InitOnlyFunc::GetInitOrigin) => {
                 let start = unsafe { stack.pop_u32() } as usize;
                 ensure!(start + 32 <= memory.len(), "Illegal memory access for init origin.");
-                (&mut memory[start..start + 32]).write_all(self.init_ctx.init_origin.as_ref())?;
+                (&mut memory[start..start + 32]).write_all(self.init_ctx.init_origin().as_ref())?;
             }
             ImportFunc::ReceiveOnly(_) => {
                 bail!("Not implemented for init {:#?}.", f);
@@ -636,12 +662,12 @@ pub fn invoke_init<
     param: Parameter,
     energy: u64,
 ) -> ExecResult<InitResult> {
-    let sender_policies_aux = init_ctx.sender_policies().policies_to_bytes();
-    let init_ctx = InitContext {
-        sender_policies: sender_policies_aux.as_ref(),
-        metadata:        init_ctx.metadata().clone(),
-        init_origin:     init_ctx.init_origin(),
-    };
+    // let sender_policies_aux = init_ctx.sender_policies().policies_to_bytes();
+    // let init_ctx = InitContext {
+    //     sender_policies: sender_policies_aux.as_ref(),
+    //     metadata:        init_ctx.metadata().clone(),
+    //     init_origin:     init_ctx.init_origin(),
+    // };
     let mut host = InitHost {
         energy: Energy {
             energy,
@@ -651,6 +677,8 @@ pub fn invoke_init<
         state: State::new(None),
         param,
         init_ctx: &init_ctx,
+        ref_type: std::marker::PhantomData,
+        policy_type: std::marker::PhantomData,
     };
 
     let res = match artifact.run(&mut host, init_name, &[Value::I64(amount as i64)]) {
