@@ -1,8 +1,8 @@
 use crate::{build::*, schema_json::*};
-use anyhow::{bail, ensure, Context};
+use anyhow::{anyhow, bail, ensure, Context};
 use clap::AppSettings;
 use concordium_contracts_common::{
-    from_bytes, to_bytes, AccountAddress, Amount, ChainMetadata, OwnedPolicy,
+    from_bytes, to_bytes, AccountAddress, Amount, OwnedPolicy, SlotTime,
 };
 use std::{fs, fs::File, io::Read, path::PathBuf};
 use structopt::StructOpt;
@@ -618,8 +618,17 @@ fn print_contract_schema(
 }
 
 #[derive(serde::Deserialize)]
+pub struct ChainMetadataOpt {
+    pub slot_time: Option<SlotTime>,
+}
+
+impl HasChainMetadata for ChainMetadataOpt {
+    fn slot_time(&self) -> ExecResult<SlotTime> { unwrap_ctx_field(self.slot_time, "slot_time") }
+}
+
+#[derive(serde::Deserialize)]
 pub struct InitContextOpt<Policies = Vec<OwnedPolicy>> {
-    pub metadata:        Option<ChainMetadata>,
+    pub metadata:        Option<ChainMetadataOpt>,
     pub init_origin:     Option<AccountAddress>,
     pub sender_policies: Option<Policies>,
 }
@@ -631,5 +640,34 @@ impl InitContextOpt {
             init_origin:     None,
             sender_policies: None,
         }
+    }
+}
+
+impl HasInitContext for InitContextOpt {
+    type MetadataType = ChainMetadataOpt;
+
+    fn metadata(&self) -> ExecResult<&Self::MetadataType> {
+        unwrap_ctx_field(self.metadata.as_ref(), "metadata")
+    }
+
+    fn init_origin(&self) -> ExecResult<AccountAddress> {
+        unwrap_ctx_field(self.init_origin, "init_origin")
+    }
+
+    fn sender_policies(&self) -> ExecResult<&Vec<OwnedPolicy>> {
+        unwrap_ctx_field(self.sender_policies.as_ref(), "sender_policies")
+    }
+}
+
+// Error handling when unwrapping
+// TODO: mention JSON in error message
+fn unwrap_ctx_field<A>(opt: Option<A>, name: &str) -> ExecResult<A> {
+    match opt {
+        Some(v) => Ok(v),
+        None => Err(anyhow!(
+            "Unset field on test context '{}', make sure to set all the fields necessary for the \
+             contract",
+            name,
+        )),
     }
 }
