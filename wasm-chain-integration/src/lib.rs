@@ -293,7 +293,13 @@ where
     pub init_ctx:          &'a Ctx,
 }
 
-pub struct ReceiveHost<'a> {
+pub struct ReceiveHost<'a, Ctx, P, A>
+where
+    A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasReceiveContext<P>, {
+    ref_type:              std::marker::PhantomData<A>,
+    policy_type:           std::marker::PhantomData<P>,
     /// Remaining energy for execution.
     pub energy:            Energy,
     /// Remaining amount of activation frames.
@@ -308,7 +314,7 @@ pub struct ReceiveHost<'a> {
     /// Outcomes of the execution, i.e., the actions tree.
     pub outcomes:          Outcome,
     /// The receive context for this call.
-    pub receive_ctx:       &'a ReceiveContext<&'a [u8]>,
+    pub receive_ctx:       &'a Ctx,
 }
 
 pub trait HasCommon<P, A>
@@ -342,10 +348,11 @@ where
     fn policies(&self) -> &P { self.init_ctx.sender_policies() }
 }
 
-impl<'a, P, A> HasCommon<P, A> for ReceiveHost<'a>
+impl<'a, Ctx, P, A> HasCommon<P, A> for ReceiveHost<'a, Ctx, P, A>
 where
-    P: SerialPolicies<A>,
     A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasReceiveContext<P>,
 {
     fn energy(&mut self) -> &mut Energy { &mut self.energy }
 
@@ -355,11 +362,9 @@ where
 
     fn param(&self) -> &[u8] { &self.param }
 
-    fn metadata(&self) -> &ChainMetadata { &self.receive_ctx.metadata }
+    fn metadata(&self) -> &ChainMetadata { &self.receive_ctx.metadata() }
 
-    fn policies(&self) -> &P {
-        todo!();
-    } //&self.receive_ctx.sender_policies }
+    fn policies(&self) -> &P { self.receive_ctx.sender_policies() }
 }
 
 fn call_common<C: HasCommon<P, A>, P: SerialPolicies<A>, A: AsRef<[u8]>>(
@@ -395,7 +400,8 @@ fn call_common<C: HasCommon<P, A>, P: SerialPolicies<A>, A: AsRef<[u8]>>(
             let start = unsafe { stack.pop_u32() } as usize;
             let write_end = start + length as usize; // this cannot overflow on 64-bit machines.
             ensure!(write_end <= memory.len(), "Illegal memory access.");
-            let policies_bytes = host.policies().policies_to_bytes().as_ref();
+            let policies = host.policies().policies_to_bytes();
+            let policies_bytes = policies.as_ref();
             let end = std::cmp::min(offset + length as usize, policies_bytes.len());
             ensure!(offset <= end, "Attempting to read non-existent policy.");
             let amt = (&mut memory[start..write_end]).write(&policies_bytes[offset..end])?;
@@ -510,7 +516,12 @@ where
     }
 }
 
-impl<'a> ReceiveHost<'a> {
+impl<'a, Ctx, P, A> ReceiveHost<'a, Ctx, P, A>
+where
+    A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasReceiveContext<P>,
+{
     pub fn call_receive_only(
         &mut self,
         rof: ReceiveOnlyFunc,
@@ -574,18 +585,18 @@ impl<'a> ReceiveHost<'a> {
             ReceiveOnlyFunc::GetReceiveInvoker => {
                 let start = unsafe { stack.pop_u32() } as usize;
                 ensure!(start + 32 <= memory.len(), "Illegal memory access for receive invoker.");
-                (&mut memory[start..start + 32]).write_all(self.receive_ctx.invoker.as_ref())?;
+                (&mut memory[start..start + 32]).write_all(self.receive_ctx.invoker().as_ref())?;
             }
             ReceiveOnlyFunc::GetReceiveSelfAddress => {
                 let start = unsafe { stack.pop_u32() } as usize;
                 ensure!(start + 16 <= memory.len(), "Illegal memory access for receive owner.");
                 (&mut memory[start..start + 8])
-                    .write_all(&self.receive_ctx.self_address.index.to_le_bytes())?;
+                    .write_all(&self.receive_ctx.self_address().index.to_le_bytes())?;
                 (&mut memory[start + 8..start + 16])
-                    .write_all(&self.receive_ctx.self_address.subindex.to_le_bytes())?;
+                    .write_all(&self.receive_ctx.self_address().subindex.to_le_bytes())?;
             }
             ReceiveOnlyFunc::GetReceiveSelfBalance => {
-                stack.push_value(self.receive_ctx.self_balance.micro_gtu);
+                stack.push_value(self.receive_ctx.self_balance().micro_gtu);
             }
             ReceiveOnlyFunc::GetReceiveSender => {
                 let start = unsafe { stack.pop_u32() } as usize;
@@ -598,14 +609,19 @@ impl<'a> ReceiveHost<'a> {
             ReceiveOnlyFunc::GetReceiveOwner => {
                 let start = unsafe { stack.pop_u32() } as usize;
                 ensure!(start + 32 <= memory.len(), "Illegal memory access for receive owner.");
-                (&mut memory[start..start + 32]).write_all(self.receive_ctx.owner.as_ref())?;
+                (&mut memory[start..start + 32]).write_all(self.receive_ctx.owner().as_ref())?;
             }
         }
         Ok(())
     }
 }
 
-impl<'a> machine::Host<ProcessedImports> for ReceiveHost<'a> {
+impl<'a, Ctx, P, A> machine::Host<ProcessedImports> for ReceiveHost<'a, Ctx, P, A>
+where
+    A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasReceiveContext<P>,
+{
     #[cfg_attr(not(feature = "fuzz-coverage"), inline(always))]
     fn tick_initial_memory(&mut self, num_pages: u32) -> machine::RunResult<()> {
         self.energy.charge_memory_alloc(num_pages)
@@ -756,6 +772,32 @@ impl<Policies> HasInitContext<Policies> for InitContext<Policies> {
     fn sender_policies(&self) -> &Policies { &self.sender_policies }
 }
 
+pub trait HasReceiveContext<Policies = Vec<OwnedPolicy>> {
+    fn metadata(&self) -> &ChainMetadata;
+    fn invoker(&self) -> AccountAddress;
+    fn self_address(&self) -> ContractAddress;
+    fn self_balance(&self) -> Amount;
+    fn sender(&self) -> Address;
+    fn owner(&self) -> AccountAddress;
+    fn sender_policies(&self) -> &Policies;
+}
+
+impl<Policies> HasReceiveContext<Policies> for ReceiveContext<Policies> {
+    fn metadata(&self) -> &ChainMetadata { &self.metadata }
+
+    fn invoker(&self) -> AccountAddress { self.invoker }
+
+    fn self_address(&self) -> ContractAddress { self.self_address }
+
+    fn self_balance(&self) -> Amount { self.self_balance }
+
+    fn sender(&self) -> Address { self.sender }
+
+    fn owner(&self) -> AccountAddress { self.owner }
+
+    fn sender_policies(&self) -> &Policies { &self.sender_policies }
+}
+
 /// Same as `invoke_init_from_source`, except that the module has cost
 /// accounting instructions inserted before the init function is called.
 /// metering.
@@ -806,6 +848,8 @@ pub fn invoke_receive<C: RunnableCode, A: AsRef<[u8]>, P: SerialPolicies<A>>(
         param:             &parameter,
         receive_ctx:       &receive_ctx,
         outcomes:          Outcome::new(),
+        ref_type:          std::marker::PhantomData,
+        policy_type:       std::marker::PhantomData,
     };
 
     let res = match artifact.run(&mut host, receive_name, &[Value::I64(amount as i64)]) {
