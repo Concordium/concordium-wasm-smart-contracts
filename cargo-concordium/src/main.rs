@@ -620,8 +620,8 @@ fn print_contract_schema(
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChainMetadataOpt {
-    pub slot_time: Option<SlotTime>,
+struct ChainMetadataOpt {
+    slot_time: Option<SlotTime>,
 }
 
 impl HasChainMetadata for ChainMetadataOpt {
@@ -630,10 +630,10 @@ impl HasChainMetadata for ChainMetadataOpt {
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InitContextOpt<Policies = Vec<OwnedPolicy>> {
-    pub metadata:        Option<ChainMetadataOpt>,
-    pub init_origin:     Option<AccountAddress>,
-    pub sender_policies: Option<Policies>,
+struct InitContextOpt<Policies = Vec<OwnedPolicy>> {
+    metadata:        Option<ChainMetadataOpt>,
+    init_origin:     Option<AccountAddress>,
+    sender_policies: Option<Policies>,
 }
 
 impl InitContextOpt {
@@ -664,14 +664,14 @@ impl HasInitContext for InitContextOpt {
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReceiveContextOpt<Policies = Vec<OwnedPolicy>> {
-    pub metadata:        Option<ChainMetadataOpt>,
-    pub invoker:         Option<AccountAddress>,
-    pub self_address:    Option<ContractAddress>,
-    pub self_balance:    Option<Amount>,
-    pub sender:          Option<Address>,
-    pub owner:           Option<AccountAddress>,
-    pub sender_policies: Option<Policies>,
+struct ReceiveContextOpt<Policies = Vec<OwnedPolicy>> {
+    metadata:        Option<ChainMetadataOpt>,
+    invoker:         Option<AccountAddress>,
+    self_address:    Option<ContractAddress>,
+    self_balance:    Option<Amount>,
+    sender:          Option<Address>,
+    owner:           Option<AccountAddress>,
+    sender_policies: Option<Policies>,
 }
 
 impl ReceiveContextOpt {
