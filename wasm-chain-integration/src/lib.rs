@@ -738,12 +738,6 @@ pub fn invoke_init<
     param: Parameter,
     energy: u64,
 ) -> ExecResult<InitResult> {
-    // let sender_policies_aux = init_ctx.sender_policies().policies_to_bytes();
-    // let init_ctx = InitContext {
-    //     sender_policies: sender_policies_aux.as_ref(),
-    //     metadata:        init_ctx.metadata().clone(),
-    //     init_origin:     init_ctx.init_origin(),
-    // };
     let mut host = InitHost {
         energy: Energy {
             energy,
@@ -839,25 +833,20 @@ pub fn invoke_init_with_metering_from_source<
 }
 
 /// Invokes an receive-function from a given artifact
-pub fn invoke_receive<C: RunnableCode, A: AsRef<[u8]>, P: SerialPolicies<A>>(
+pub fn invoke_receive<
+    C: RunnableCode,
+    A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasReceiveContext<P>,
+>(
     artifact: &Artifact<ProcessedImports, C>,
     amount: u64,
-    receive_ctx: ReceiveContext<P>,
+    receive_ctx: Ctx,
     current_state: &[u8],
     receive_name: &str,
     parameter: Parameter,
     energy: u64,
 ) -> ExecResult<ReceiveResult> {
-    let sender_policies_aux = receive_ctx.sender_policies.policies_to_bytes();
-    let receive_ctx = ReceiveContext {
-        sender_policies: sender_policies_aux.as_ref(),
-        metadata:        receive_ctx.metadata,
-        invoker:         receive_ctx.invoker,
-        self_address:    receive_ctx.self_address,
-        self_balance:    receive_ctx.self_balance,
-        sender:          receive_ctx.sender,
-        owner:           receive_ctx.owner,
-    };
     let mut host = ReceiveHost {
         energy:            Energy {
             energy,
@@ -951,10 +940,14 @@ impl SerialPolicies<Vec<u8>> for Vec<OwnedPolicy> {
 
 /// Invokes an receive-function from a given artifact *bytes*
 #[cfg_attr(not(feature = "fuzz-coverage"), inline)]
-pub fn invoke_receive_from_artifact<A: AsRef<[u8]>, P: SerialPolicies<A>>(
+pub fn invoke_receive_from_artifact<
+    A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasReceiveContext<P>,
+>(
     artifact_bytes: &[u8],
     amount: u64,
-    receive_ctx: ReceiveContext<P>,
+    receive_ctx: Ctx,
     current_state: &[u8],
     receive_name: &str,
     parameter: Parameter,
@@ -966,10 +959,14 @@ pub fn invoke_receive_from_artifact<A: AsRef<[u8]>, P: SerialPolicies<A>>(
 
 /// Invokes an receive-function from Wasm module bytes
 #[cfg_attr(not(feature = "fuzz-coverage"), inline)]
-pub fn invoke_receive_from_source<A: AsRef<[u8]>, P: SerialPolicies<A>>(
+pub fn invoke_receive_from_source<
+    A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasReceiveContext<P>,
+>(
     source_bytes: &[u8],
     amount: u64,
-    receive_ctx: ReceiveContext<P>,
+    receive_ctx: Ctx,
     current_state: &[u8],
     receive_name: &str,
     parameter: Parameter,
@@ -982,10 +979,14 @@ pub fn invoke_receive_from_source<A: AsRef<[u8]>, P: SerialPolicies<A>>(
 /// Invokes an receive-function from Wasm module bytes, injects the module with
 /// metering.
 #[cfg_attr(not(feature = "fuzz-coverage"), inline)]
-pub fn invoke_receive_with_metering_from_source<A: AsRef<[u8]>, P: SerialPolicies<A>>(
+pub fn invoke_receive_with_metering_from_source<
+    A: AsRef<[u8]>,
+    P: SerialPolicies<A>,
+    Ctx: HasReceiveContext<P>,
+>(
     source_bytes: &[u8],
     amount: u64,
-    receive_ctx: ReceiveContext<P>,
+    receive_ctx: Ctx,
     current_state: &[u8],
     receive_name: &str,
     parameter: Parameter,

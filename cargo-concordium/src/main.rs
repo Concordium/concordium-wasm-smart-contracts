@@ -2,7 +2,7 @@ use crate::{build::*, schema_json::*};
 use anyhow::{anyhow, bail, ensure, Context};
 use clap::AppSettings;
 use concordium_contracts_common::{
-    from_bytes, to_bytes, AccountAddress, Amount, OwnedPolicy, SlotTime,
+    from_bytes, to_bytes, AccountAddress, Address, Amount, ContractAddress, OwnedPolicy, SlotTime,
 };
 use std::{fs, fs::File, io::Read, path::PathBuf};
 use structopt::StructOpt;
@@ -349,11 +349,10 @@ pub fn main() -> anyhow::Result<()> {
                     ..
                 } => {
                     let init_ctx: InitContextOpt = {
-                        if let Ok(ctx_file) = fs::read(context) {
-                            serde_json::from_slice(&ctx_file)
-                                .context("Could not parse the init context JSON.")?
-                        } else {
-                            InitContextOpt::new()
+                        match fs::read(context) {
+                            Ok(ctx_file) => serde_json::from_slice(&ctx_file)
+                                .context("Could not parse the init context JSON.")?,
+                            Err(_) => InitContextOpt::new(),
                         }
                     };
                     let name = format!("init_{}", contract_name);
@@ -397,14 +396,16 @@ pub fn main() -> anyhow::Result<()> {
                     ref context,
                     ..
                 } => {
-                    let mut receive_ctx: ReceiveContext<Vec<OwnedPolicy>> = {
-                        let ctx_file = fs::read(context).context("Could not open context file.")?;
-                        serde_json::from_slice::<ReceiveContext<Vec<OwnedPolicy>>>(&ctx_file)
-                            .context("Could not parse receive context")?
+                    let mut receive_ctx: ReceiveContextOpt = {
+                        match fs::read(context) {
+                            Ok(ctx_file) => serde_json::from_slice(&ctx_file)
+                                .context("Could not parse receive context")?,
+                            Err(_) => ReceiveContextOpt::new(),
+                        }
                     };
                     if let Some(balance) = balance {
                         receive_ctx.self_balance =
-                            concordium_contracts_common::Amount::from_micro_gtu(balance);
+                            Some(concordium_contracts_common::Amount::from_micro_gtu(balance));
                     }
 
                     // initial state of the smart contract, read from either a binary or json file.
@@ -655,6 +656,58 @@ impl HasInitContext for InitContextOpt {
     fn init_origin(&self) -> ExecResult<AccountAddress> {
         unwrap_ctx_field(self.init_origin, "init_origin")
     }
+
+    fn sender_policies(&self) -> ExecResult<&Vec<OwnedPolicy>> {
+        unwrap_ctx_field(self.sender_policies.as_ref(), "sender_policies")
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReceiveContextOpt<Policies = Vec<OwnedPolicy>> {
+    pub metadata:        Option<ChainMetadataOpt>,
+    pub invoker:         Option<AccountAddress>,
+    pub self_address:    Option<ContractAddress>,
+    pub self_balance:    Option<Amount>,
+    pub sender:          Option<Address>,
+    pub owner:           Option<AccountAddress>,
+    pub sender_policies: Option<Policies>,
+}
+
+impl ReceiveContextOpt {
+    pub fn new() -> Self {
+        Self {
+            metadata:        None,
+            invoker:         None,
+            self_address:    None,
+            self_balance:    None,
+            sender:          None,
+            owner:           None,
+            sender_policies: None,
+        }
+    }
+}
+
+impl HasReceiveContext for ReceiveContextOpt {
+    type MetadataType = ChainMetadataOpt;
+
+    fn metadata(&self) -> ExecResult<&Self::MetadataType> {
+        unwrap_ctx_field(self.metadata.as_ref(), "metadata")
+    }
+
+    fn invoker(&self) -> ExecResult<AccountAddress> { unwrap_ctx_field(self.invoker, "metadata") }
+
+    fn self_address(&self) -> ExecResult<ContractAddress> {
+        unwrap_ctx_field(self.self_address, "self_address")
+    }
+
+    fn self_balance(&self) -> ExecResult<Amount> {
+        unwrap_ctx_field(self.self_balance, "self_balance")
+    }
+
+    fn sender(&self) -> ExecResult<Address> { unwrap_ctx_field(self.sender, "sender") }
+
+    fn owner(&self) -> ExecResult<AccountAddress> { unwrap_ctx_field(self.owner, "owner") }
 
     fn sender_policies(&self) -> ExecResult<&Vec<OwnedPolicy>> {
         unwrap_ctx_field(self.sender_policies.as_ref(), "sender_policies")
