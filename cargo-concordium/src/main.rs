@@ -618,6 +618,7 @@ fn print_contract_schema(
 }
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChainMetadataOpt {
     pub slot_time: Option<SlotTime>,
 }
@@ -627,6 +628,7 @@ impl HasChainMetadata for ChainMetadataOpt {
 }
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InitContextOpt<Policies = Vec<OwnedPolicy>> {
     pub metadata:        Option<ChainMetadataOpt>,
     pub init_origin:     Option<AccountAddress>,
