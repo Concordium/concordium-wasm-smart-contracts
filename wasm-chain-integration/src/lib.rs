@@ -276,7 +276,9 @@ where
     A: AsRef<[u8]>,
     P: SerialPolicies<A>,
     Ctx: HasInitContext<P>, {
-    ref_type:              std::marker::PhantomData<A>,
+    /// Phantom marker for A.
+    policy_bytes_type:     std::marker::PhantomData<A>,
+    /// Phantom marker for P.
     policy_type:           std::marker::PhantomData<P>,
     /// Remaining energy for execution.
     pub energy:            Energy,
@@ -298,7 +300,9 @@ where
     A: AsRef<[u8]>,
     P: SerialPolicies<A>,
     Ctx: HasReceiveContext<P>, {
-    ref_type:              std::marker::PhantomData<A>,
+    /// Phantom marker for A.
+    policy_bytes_type:     std::marker::PhantomData<A>,
+    /// Phantom marker for P.
     policy_type:           std::marker::PhantomData<P>,
     /// Remaining energy for execution.
     pub energy:            Energy,
@@ -747,7 +751,7 @@ pub fn invoke_init<
         state: State::new(None),
         param,
         init_ctx: &init_ctx,
-        ref_type: std::marker::PhantomData,
+        policy_bytes_type: std::marker::PhantomData,
         policy_type: std::marker::PhantomData,
     };
 
@@ -857,7 +861,7 @@ pub fn invoke_receive<
         param:             &parameter,
         receive_ctx:       &receive_ctx,
         outcomes:          Outcome::new(),
-        ref_type:          std::marker::PhantomData,
+        policy_bytes_type: std::marker::PhantomData,
         policy_type:       std::marker::PhantomData,
     };
 

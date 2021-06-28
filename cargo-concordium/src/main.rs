@@ -618,6 +618,9 @@ fn print_contract_schema(
     }
 }
 
+/// A chain metadata with an optional field.
+/// Used when simulating contracts to allow the user to only specify the
+/// necessary context fields.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ChainMetadataOpt {
@@ -628,6 +631,9 @@ impl HasChainMetadata for ChainMetadataOpt {
     fn slot_time(&self) -> ExecResult<SlotTime> { unwrap_ctx_field(self.slot_time, "slot_time") }
 }
 
+/// An init context with optional fields.
+/// Used when simulating contracts to allow the user to only specify the
+/// necessary context fields.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InitContextOpt<Policies = Vec<OwnedPolicy>> {
@@ -662,6 +668,9 @@ impl HasInitContext for InitContextOpt {
     }
 }
 
+/// A receive context with optional fields.
+/// Used when simulating contracts to allow the user to only specify the
+/// necessary context fields.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ReceiveContextOpt<Policies = Vec<OwnedPolicy>> {
@@ -715,13 +724,12 @@ impl HasReceiveContext for ReceiveContextOpt {
 }
 
 // Error handling when unwrapping
-// TODO: mention JSON in error message
 fn unwrap_ctx_field<A>(opt: Option<A>, name: &str) -> ExecResult<A> {
     match opt {
         Some(v) => Ok(v),
         None => Err(anyhow!(
-            "Unset field on test context '{}', make sure to set all the fields necessary for the \
-             contract",
+            "Missing field in the test context '{}'. Make sure to provide a context file with all \
+             the necessary fields for the contract.",
             name,
         )),
     }
