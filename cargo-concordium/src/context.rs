@@ -30,10 +30,10 @@ impl HasChainMetadata for ChainMetadataOpt {
 /// necessary context fields.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct InitContextOpt<Policies = Vec<OwnedPolicy>> {
+pub(crate) struct InitContextOpt {
     metadata:        ChainMetadataOpt,
     init_origin:     Option<AccountAddress>,
-    sender_policies: Option<Policies>,
+    sender_policies: Option<Vec<OwnedPolicy>>,
 }
 
 impl InitContextOpt {
@@ -65,7 +65,7 @@ impl HasInitContext for InitContextOpt {
 /// necessary context fields.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ReceiveContextOpt<Policies = Vec<OwnedPolicy>> {
+pub(crate) struct ReceiveContextOpt {
     metadata:                ChainMetadataOpt,
     invoker:                 Option<AccountAddress>,
     self_address:            Option<ContractAddress>,
@@ -73,7 +73,7 @@ pub(crate) struct ReceiveContextOpt<Policies = Vec<OwnedPolicy>> {
     pub(crate) self_balance: Option<Amount>,
     sender:                  Option<Address>,
     owner:                   Option<AccountAddress>,
-    sender_policies:         Option<Policies>,
+    sender_policies:         Option<Vec<OwnedPolicy>>,
 }
 
 impl ReceiveContextOpt {
