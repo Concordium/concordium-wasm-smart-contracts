@@ -331,7 +331,7 @@ where
     fn state(&mut self) -> &mut State;
     fn param(&self) -> &[u8];
     fn policies(&self) -> ExecResult<&P>;
-    fn metadata(&self) -> ExecResult<&Self::MetadataType>;
+    fn metadata(&self) -> &Self::MetadataType;
 }
 
 impl<'a, Ctx, P, A> HasCommon<P, A> for InitHost<'a, Ctx, P, A>
@@ -350,7 +350,7 @@ where
 
     fn param(&self) -> &[u8] { &self.param }
 
-    fn metadata(&self) -> ExecResult<&Self::MetadataType> { self.init_ctx.metadata() }
+    fn metadata(&self) -> &Self::MetadataType { self.init_ctx.metadata() }
 
     fn policies(&self) -> ExecResult<&P> { self.init_ctx.sender_policies() }
 }
@@ -371,14 +371,14 @@ where
 
     fn param(&self) -> &[u8] { &self.param }
 
-    fn metadata(&self) -> ExecResult<&Self::MetadataType> { self.receive_ctx.metadata() }
+    fn metadata(&self) -> &Self::MetadataType { self.receive_ctx.metadata() }
 
     fn policies(&self) -> ExecResult<&P> { self.receive_ctx.sender_policies() }
 }
 
 pub trait HasInitContext<Policies = Vec<OwnedPolicy>> {
     type MetadataType: HasChainMetadata;
-    fn metadata(&self) -> ExecResult<&Self::MetadataType>;
+    fn metadata(&self) -> &Self::MetadataType;
     fn init_origin(&self) -> ExecResult<AccountAddress>;
     fn sender_policies(&self) -> ExecResult<&Policies>;
 }
@@ -386,7 +386,7 @@ pub trait HasInitContext<Policies = Vec<OwnedPolicy>> {
 impl<Policies> HasInitContext<Policies> for InitContext<Policies> {
     type MetadataType = ChainMetadata;
 
-    fn metadata(&self) -> ExecResult<&Self::MetadataType> { Ok(&self.metadata) }
+    fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
     fn init_origin(&self) -> ExecResult<AccountAddress> { Ok(self.init_origin) }
 
@@ -395,7 +395,7 @@ impl<Policies> HasInitContext<Policies> for InitContext<Policies> {
 
 pub trait HasReceiveContext<Policies = Vec<OwnedPolicy>> {
     type MetadataType: HasChainMetadata;
-    fn metadata(&self) -> ExecResult<&Self::MetadataType>;
+    fn metadata(&self) -> &Self::MetadataType;
     fn invoker(&self) -> ExecResult<AccountAddress>;
     fn self_address(&self) -> ExecResult<ContractAddress>;
     fn self_balance(&self) -> ExecResult<Amount>;
@@ -407,7 +407,7 @@ pub trait HasReceiveContext<Policies = Vec<OwnedPolicy>> {
 impl<Policies> HasReceiveContext<Policies> for ReceiveContext<Policies> {
     type MetadataType = ChainMetadata;
 
-    fn metadata(&self) -> ExecResult<&Self::MetadataType> { Ok(&self.metadata) }
+    fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
     fn invoker(&self) -> ExecResult<AccountAddress> { Ok(self.invoker) }
 
@@ -526,7 +526,7 @@ fn call_common<C: HasCommon<P, A>, P: SerialPolicies<A>, A: AsRef<[u8]>>(
         CommonFunc::GetSlotTime => {
             // the cost of this function is adequately reflected by the base cost of a
             // function call so we do not charge extra.
-            stack.push_value(host.metadata()?.slot_time()?.timestamp_millis());
+            stack.push_value(host.metadata().slot_time()?.timestamp_millis());
         }
     }
     Ok(())

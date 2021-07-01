@@ -13,6 +13,14 @@ pub(crate) struct ChainMetadataOpt {
     slot_time: Option<SlotTime>,
 }
 
+impl ChainMetadataOpt {
+    fn new() -> Self {
+        Self {
+            slot_time: None,
+        }
+    }
+}
+
 impl HasChainMetadata for ChainMetadataOpt {
     fn slot_time(&self) -> ExecResult<SlotTime> { unwrap_ctx_field(self.slot_time, "slotTime") }
 }
@@ -23,7 +31,7 @@ impl HasChainMetadata for ChainMetadataOpt {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InitContextOpt<Policies = Vec<OwnedPolicy>> {
-    metadata:        Option<ChainMetadataOpt>,
+    metadata:        ChainMetadataOpt,
     init_origin:     Option<AccountAddress>,
     sender_policies: Option<Policies>,
 }
@@ -31,7 +39,7 @@ pub(crate) struct InitContextOpt<Policies = Vec<OwnedPolicy>> {
 impl InitContextOpt {
     pub fn new() -> Self {
         Self {
-            metadata:        None,
+            metadata:        ChainMetadataOpt::new(),
             init_origin:     None,
             sender_policies: None,
         }
@@ -41,9 +49,7 @@ impl InitContextOpt {
 impl HasInitContext for InitContextOpt {
     type MetadataType = ChainMetadataOpt;
 
-    fn metadata(&self) -> ExecResult<&Self::MetadataType> {
-        unwrap_ctx_field(self.metadata.as_ref(), "metadata")
-    }
+    fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
     fn init_origin(&self) -> ExecResult<AccountAddress> {
         unwrap_ctx_field(self.init_origin, "initOrigin")
@@ -60,7 +66,7 @@ impl HasInitContext for InitContextOpt {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReceiveContextOpt<Policies = Vec<OwnedPolicy>> {
-    metadata:                Option<ChainMetadataOpt>,
+    metadata:                ChainMetadataOpt,
     invoker:                 Option<AccountAddress>,
     self_address:            Option<ContractAddress>,
     // This is pub(crate) because it is overwritten when `--balance` is used.
@@ -73,7 +79,7 @@ pub(crate) struct ReceiveContextOpt<Policies = Vec<OwnedPolicy>> {
 impl ReceiveContextOpt {
     pub fn new() -> Self {
         Self {
-            metadata:        None,
+            metadata:        ChainMetadataOpt::new(),
             invoker:         None,
             self_address:    None,
             self_balance:    None,
@@ -87,9 +93,7 @@ impl ReceiveContextOpt {
 impl HasReceiveContext for ReceiveContextOpt {
     type MetadataType = ChainMetadataOpt;
 
-    fn metadata(&self) -> ExecResult<&Self::MetadataType> {
-        unwrap_ctx_field(self.metadata.as_ref(), "metadata")
-    }
+    fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
     fn invoker(&self) -> ExecResult<AccountAddress> { unwrap_ctx_field(self.invoker, "metadata") }
 
