@@ -379,7 +379,7 @@ where
 pub trait HasInitContext<Policies = Vec<OwnedPolicy>> {
     type MetadataType: HasChainMetadata;
     fn metadata(&self) -> &Self::MetadataType;
-    fn init_origin(&self) -> ExecResult<AccountAddress>;
+    fn init_origin(&self) -> ExecResult<&AccountAddress>;
     fn sender_policies(&self) -> ExecResult<&Policies>;
 }
 
@@ -388,7 +388,7 @@ impl<Policies> HasInitContext<Policies> for InitContext<Policies> {
 
     fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
-    fn init_origin(&self) -> ExecResult<AccountAddress> { Ok(self.init_origin) }
+    fn init_origin(&self) -> ExecResult<&AccountAddress> { Ok(&self.init_origin) }
 
     fn sender_policies(&self) -> ExecResult<&Policies> { Ok(&self.sender_policies) }
 }
@@ -396,11 +396,11 @@ impl<Policies> HasInitContext<Policies> for InitContext<Policies> {
 pub trait HasReceiveContext<Policies = Vec<OwnedPolicy>> {
     type MetadataType: HasChainMetadata;
     fn metadata(&self) -> &Self::MetadataType;
-    fn invoker(&self) -> ExecResult<AccountAddress>;
-    fn self_address(&self) -> ExecResult<ContractAddress>;
+    fn invoker(&self) -> ExecResult<&AccountAddress>;
+    fn self_address(&self) -> ExecResult<&ContractAddress>;
     fn self_balance(&self) -> ExecResult<Amount>;
-    fn sender(&self) -> ExecResult<Address>;
-    fn owner(&self) -> ExecResult<AccountAddress>;
+    fn sender(&self) -> ExecResult<&Address>;
+    fn owner(&self) -> ExecResult<&AccountAddress>;
     fn sender_policies(&self) -> ExecResult<&Policies>;
 }
 
@@ -409,15 +409,15 @@ impl<Policies> HasReceiveContext<Policies> for ReceiveContext<Policies> {
 
     fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
-    fn invoker(&self) -> ExecResult<AccountAddress> { Ok(self.invoker) }
+    fn invoker(&self) -> ExecResult<&AccountAddress> { Ok(&self.invoker) }
 
-    fn self_address(&self) -> ExecResult<ContractAddress> { Ok(self.self_address) }
+    fn self_address(&self) -> ExecResult<&ContractAddress> { Ok(&self.self_address) }
 
     fn self_balance(&self) -> ExecResult<Amount> { Ok(self.self_balance) }
 
-    fn sender(&self) -> ExecResult<Address> { Ok(self.sender) }
+    fn sender(&self) -> ExecResult<&Address> { Ok(&self.sender) }
 
-    fn owner(&self) -> ExecResult<AccountAddress> { Ok(self.owner) }
+    fn owner(&self) -> ExecResult<&AccountAddress> { Ok(&self.owner) }
 
     fn sender_policies(&self) -> ExecResult<&Policies> { Ok(&self.sender_policies) }
 }

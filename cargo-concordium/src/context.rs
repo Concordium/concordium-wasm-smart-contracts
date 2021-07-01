@@ -51,8 +51,8 @@ impl HasInitContext for InitContextOpt {
 
     fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
-    fn init_origin(&self) -> ExecResult<AccountAddress> {
-        unwrap_ctx_field(self.init_origin, "initOrigin")
+    fn init_origin(&self) -> ExecResult<&AccountAddress> {
+        unwrap_ctx_field(self.init_origin.as_ref(), "initOrigin")
     }
 
     fn sender_policies(&self) -> ExecResult<&Vec<OwnedPolicy>> {
@@ -95,19 +95,23 @@ impl HasReceiveContext for ReceiveContextOpt {
 
     fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
-    fn invoker(&self) -> ExecResult<AccountAddress> { unwrap_ctx_field(self.invoker, "metadata") }
+    fn invoker(&self) -> ExecResult<&AccountAddress> {
+        unwrap_ctx_field(self.invoker.as_ref(), "metadata")
+    }
 
-    fn self_address(&self) -> ExecResult<ContractAddress> {
-        unwrap_ctx_field(self.self_address, "selfAddress")
+    fn self_address(&self) -> ExecResult<&ContractAddress> {
+        unwrap_ctx_field(self.self_address.as_ref(), "selfAddress")
     }
 
     fn self_balance(&self) -> ExecResult<Amount> {
         unwrap_ctx_field(self.self_balance, "selfBalance")
     }
 
-    fn sender(&self) -> ExecResult<Address> { unwrap_ctx_field(self.sender, "sender") }
+    fn sender(&self) -> ExecResult<&Address> { unwrap_ctx_field(self.sender.as_ref(), "sender") }
 
-    fn owner(&self) -> ExecResult<AccountAddress> { unwrap_ctx_field(self.owner, "owner") }
+    fn owner(&self) -> ExecResult<&AccountAddress> {
+        unwrap_ctx_field(self.owner.as_ref(), "owner")
+    }
 
     fn sender_policies(&self) -> ExecResult<&Vec<OwnedPolicy>> {
         unwrap_ctx_field(self.sender_policies.as_ref(), "senderPolicies")
