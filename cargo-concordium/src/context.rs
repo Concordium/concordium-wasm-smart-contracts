@@ -63,6 +63,7 @@ pub(crate) struct ReceiveContextOpt<Policies = Vec<OwnedPolicy>> {
     metadata:                Option<ChainMetadataOpt>,
     invoker:                 Option<AccountAddress>,
     self_address:            Option<ContractAddress>,
+    // This is pub(crate) because it is overwritten when `--balance` is used.
     pub(crate) self_balance: Option<Amount>,
     sender:                  Option<Address>,
     owner:                   Option<AccountAddress>,
@@ -115,7 +116,7 @@ fn unwrap_ctx_field<A>(opt: Option<A>, name: &str) -> ExecResult<A> {
         Some(v) => Ok(v),
         None => Err(anyhow!(
             "Missing field '{}' in the context. Make sure to provide a context file with all the \
-             necessary fields for the contract.",
+             fields the contract uses.",
             name,
         )),
     }
