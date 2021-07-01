@@ -114,8 +114,8 @@ fn unwrap_ctx_field<A>(opt: Option<A>, name: &str) -> ExecResult<A> {
     match opt {
         Some(v) => Ok(v),
         None => Err(anyhow!(
-            "Missing field in the test context '{}'. Make sure to provide a context file with all \
-             the necessary fields for the contract.",
+            "Missing field '{}' in the context. Make sure to provide a context file with all the \
+             necessary fields for the contract.",
             name,
         )),
     }

@@ -141,10 +141,9 @@ enum RunCommand {
             name = "context",
             long = "context",
             short = "t",
-            default_value = "./init-context.json",
             help = "Path to the init context file."
         )]
-        context:       PathBuf,
+        context:       Option<PathBuf>,
         #[structopt(flatten)]
         runner:        Runner,
     },
@@ -191,7 +190,7 @@ enum RunCommand {
             short = "t",
             help = "Path to the receive context file."
         )]
-        context:         PathBuf,
+        context:         Option<PathBuf>,
         #[structopt(flatten)]
         runner:          Runner,
     },
@@ -347,12 +346,14 @@ pub fn main() -> anyhow::Result<()> {
                     ref context,
                     ..
                 } => {
-                    let init_ctx: InitContextOpt = {
-                        match fs::read(context) {
-                            Ok(ctx_file) => serde_json::from_slice(&ctx_file)
-                                .context("Could not parse the init context JSON.")?,
-                            Err(_) => InitContextOpt::new(),
+                    let init_ctx: InitContextOpt = match context {
+                        Some(context_file) => {
+                            let ctx_content = fs::read(context_file)
+                                .context("Could not read init context file.")?;
+                            serde_json::from_slice(&ctx_content)
+                                .context("Could not parse init context.")?
                         }
+                        None => InitContextOpt::new(),
                     };
                     let name = format!("init_{}", contract_name);
                     let res = invoke_init_with_metering_from_source(
@@ -395,12 +396,14 @@ pub fn main() -> anyhow::Result<()> {
                     ref context,
                     ..
                 } => {
-                    let mut receive_ctx: ReceiveContextOpt = {
-                        match fs::read(context) {
-                            Ok(ctx_file) => serde_json::from_slice(&ctx_file)
-                                .context("Could not parse receive context")?,
-                            Err(_) => ReceiveContextOpt::new(),
+                    let mut receive_ctx: ReceiveContextOpt = match context {
+                        Some(context_file) => {
+                            let ctx_content = fs::read(context_file)
+                                .context("Could not read receive context file.")?;
+                            serde_json::from_slice(&ctx_content)
+                                .context("Could not parse receive context.")?
                         }
+                        None => ReceiveContextOpt::new(),
                     };
                     if let Some(balance) = balance {
                         receive_ctx.self_balance =
