@@ -14,7 +14,7 @@ pub(crate) struct ChainMetadataOpt {
 }
 
 impl HasChainMetadata for ChainMetadataOpt {
-    fn slot_time(&self) -> ExecResult<SlotTime> { unwrap_ctx_field(self.slot_time, "slot_time") }
+    fn slot_time(&self) -> ExecResult<SlotTime> { unwrap_ctx_field(self.slot_time, "slotTime") }
 }
 
 /// An init context with optional fields.
@@ -46,11 +46,11 @@ impl HasInitContext for InitContextOpt {
     }
 
     fn init_origin(&self) -> ExecResult<AccountAddress> {
-        unwrap_ctx_field(self.init_origin, "init_origin")
+        unwrap_ctx_field(self.init_origin, "initOrigin")
     }
 
     fn sender_policies(&self) -> ExecResult<&Vec<OwnedPolicy>> {
-        unwrap_ctx_field(self.sender_policies.as_ref(), "sender_policies")
+        unwrap_ctx_field(self.sender_policies.as_ref(), "senderPolicies")
     }
 }
 
@@ -93,11 +93,11 @@ impl HasReceiveContext for ReceiveContextOpt {
     fn invoker(&self) -> ExecResult<AccountAddress> { unwrap_ctx_field(self.invoker, "metadata") }
 
     fn self_address(&self) -> ExecResult<ContractAddress> {
-        unwrap_ctx_field(self.self_address, "self_address")
+        unwrap_ctx_field(self.self_address, "selfAddress")
     }
 
     fn self_balance(&self) -> ExecResult<Amount> {
-        unwrap_ctx_field(self.self_balance, "self_balance")
+        unwrap_ctx_field(self.self_balance, "selfBalance")
     }
 
     fn sender(&self) -> ExecResult<Address> { unwrap_ctx_field(self.sender, "sender") }
@@ -105,7 +105,7 @@ impl HasReceiveContext for ReceiveContextOpt {
     fn owner(&self) -> ExecResult<AccountAddress> { unwrap_ctx_field(self.owner, "owner") }
 
     fn sender_policies(&self) -> ExecResult<&Vec<OwnedPolicy>> {
-        unwrap_ctx_field(self.sender_policies.as_ref(), "sender_policies")
+        unwrap_ctx_field(self.sender_policies.as_ref(), "senderPolicies")
     }
 }
 
