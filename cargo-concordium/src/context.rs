@@ -27,7 +27,7 @@ impl HasChainMetadata for ChainMetadataOpt {
 
 /// An init context with optional fields.
 /// Used when simulating contracts to allow the user to only specify the
-/// necessary context fields.
+/// context fields used by the contract.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InitContextOpt {
@@ -48,6 +48,8 @@ impl InitContextOpt {
 
 impl HasInitContext for InitContextOpt {
     type MetadataType = ChainMetadataOpt;
+    type PolicyBytesType = Vec<u8>;
+    type PolicyType = Vec<OwnedPolicy>;
 
     fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
@@ -55,14 +57,14 @@ impl HasInitContext for InitContextOpt {
         unwrap_ctx_field(self.init_origin.as_ref(), "initOrigin")
     }
 
-    fn sender_policies(&self) -> ExecResult<&Vec<OwnedPolicy>> {
+    fn sender_policies(&self) -> ExecResult<&Self::PolicyType> {
         unwrap_ctx_field(self.sender_policies.as_ref(), "senderPolicies")
     }
 }
 
 /// A receive context with optional fields.
 /// Used when simulating contracts to allow the user to only specify the
-/// necessary context fields.
+/// context fields used by the contract.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReceiveContextOpt {
@@ -92,6 +94,8 @@ impl ReceiveContextOpt {
 
 impl HasReceiveContext for ReceiveContextOpt {
     type MetadataType = ChainMetadataOpt;
+    type PolicyBytesType = Vec<u8>;
+    type PolicyType = Vec<OwnedPolicy>;
 
     fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
@@ -113,7 +117,7 @@ impl HasReceiveContext for ReceiveContextOpt {
         unwrap_ctx_field(self.owner.as_ref(), "owner")
     }
 
-    fn sender_policies(&self) -> ExecResult<&Vec<OwnedPolicy>> {
+    fn sender_policies(&self) -> ExecResult<&Self::PolicyType> {
         unwrap_ctx_field(self.sender_policies.as_ref(), "senderPolicies")
     }
 }

@@ -271,15 +271,9 @@ impl State {
     }
 }
 
-pub struct InitHost<'a, Ctx, P, A>
+pub struct InitHost<'a, Ctx>
 where
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasInitContext<P>, {
-    /// Phantom marker for A.
-    policy_bytes_type:     std::marker::PhantomData<A>,
-    /// Phantom marker for P.
-    policy_type:           std::marker::PhantomData<P>,
+    Ctx: HasInitContext, {
     /// Remaining energy for execution.
     pub energy:            Energy,
     /// Remaining amount of activation frames.
@@ -295,15 +289,9 @@ where
     pub init_ctx:          &'a Ctx,
 }
 
-pub struct ReceiveHost<'a, Ctx, P, A>
+pub struct ReceiveHost<'a, Ctx>
 where
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasReceiveContext<P>, {
-    /// Phantom marker for A.
-    policy_bytes_type:     std::marker::PhantomData<A>,
-    /// Phantom marker for P.
-    policy_type:           std::marker::PhantomData<P>,
+    Ctx: HasReceiveContext, {
     /// Remaining energy for execution.
     pub energy:            Energy,
     /// Remaining amount of activation frames.
@@ -321,26 +309,26 @@ where
     pub receive_ctx:       &'a Ctx,
 }
 
-pub trait HasCommon<P, A>
-where
-    P: SerialPolicies<A>,
-    A: AsRef<[u8]>, {
+pub trait HasCommon {
     type MetadataType: HasChainMetadata;
+    type PolicyBytesType: AsRef<[u8]>;
+    type PolicyType: SerialPolicies<Self::PolicyBytesType>;
+
     fn energy(&mut self) -> &mut Energy;
     fn logs(&mut self) -> &mut Logs;
     fn state(&mut self) -> &mut State;
     fn param(&self) -> &[u8];
-    fn policies(&self) -> ExecResult<&P>;
+    fn policies(&self) -> ExecResult<&Self::PolicyType>;
     fn metadata(&self) -> &Self::MetadataType;
 }
 
-impl<'a, Ctx, P, A> HasCommon<P, A> for InitHost<'a, Ctx, P, A>
+impl<'a, Ctx> HasCommon for InitHost<'a, Ctx>
 where
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasInitContext<P>,
+    Ctx: HasInitContext,
 {
     type MetadataType = Ctx::MetadataType;
+    type PolicyBytesType = Ctx::PolicyBytesType;
+    type PolicyType = Ctx::PolicyType;
 
     fn energy(&mut self) -> &mut Energy { &mut self.energy }
 
@@ -352,16 +340,16 @@ where
 
     fn metadata(&self) -> &Self::MetadataType { self.init_ctx.metadata() }
 
-    fn policies(&self) -> ExecResult<&P> { self.init_ctx.sender_policies() }
+    fn policies(&self) -> ExecResult<&Self::PolicyType> { self.init_ctx.sender_policies() }
 }
 
-impl<'a, Ctx, P, A> HasCommon<P, A> for ReceiveHost<'a, Ctx, P, A>
+impl<'a, Ctx> HasCommon for ReceiveHost<'a, Ctx>
 where
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasReceiveContext<P>,
+    Ctx: HasReceiveContext,
 {
     type MetadataType = Ctx::MetadataType;
+    type PolicyBytesType = Ctx::PolicyBytesType;
+    type PolicyType = Ctx::PolicyType;
 
     fn energy(&mut self) -> &mut Energy { &mut self.energy }
 
@@ -373,39 +361,61 @@ where
 
     fn metadata(&self) -> &Self::MetadataType { self.receive_ctx.metadata() }
 
-    fn policies(&self) -> ExecResult<&P> { self.receive_ctx.sender_policies() }
+    fn policies(&self) -> ExecResult<&Self::PolicyType> { self.receive_ctx.sender_policies() }
 }
 
-pub trait HasInitContext<Policies = Vec<OwnedPolicy>> {
+pub trait HasInitContext {
     type MetadataType: HasChainMetadata;
+    type PolicyBytesType: AsRef<[u8]>;
+    type PolicyType: SerialPolicies<Self::PolicyBytesType>;
+
     fn metadata(&self) -> &Self::MetadataType;
     fn init_origin(&self) -> ExecResult<&AccountAddress>;
-    fn sender_policies(&self) -> ExecResult<&Policies>;
+    fn sender_policies(&self) -> ExecResult<&Self::PolicyType>;
 }
 
-impl<Policies> HasInitContext<Policies> for InitContext<Policies> {
+impl HasInitContext for InitContext<Vec<OwnedPolicy>> {
     type MetadataType = ChainMetadata;
+    type PolicyBytesType = Vec<u8>;
+    type PolicyType = Vec<OwnedPolicy>;
 
     fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
     fn init_origin(&self) -> ExecResult<&AccountAddress> { Ok(&self.init_origin) }
 
-    fn sender_policies(&self) -> ExecResult<&Policies> { Ok(&self.sender_policies) }
+    fn sender_policies(&self) -> ExecResult<&Self::PolicyType> { Ok(&self.sender_policies) }
 }
 
-pub trait HasReceiveContext<Policies = Vec<OwnedPolicy>> {
+impl<'a> HasInitContext for InitContext<&'a [u8]> {
+    type MetadataType = ChainMetadata;
+    type PolicyBytesType = &'a [u8];
+    type PolicyType = &'a [u8];
+
+    fn metadata(&self) -> &Self::MetadataType { &self.metadata }
+
+    fn init_origin(&self) -> ExecResult<&AccountAddress> { Ok(&self.init_origin) }
+
+    fn sender_policies(&self) -> ExecResult<&Self::PolicyType> { Ok(&self.sender_policies) }
+}
+
+pub trait HasReceiveContext {
     type MetadataType: HasChainMetadata;
+    type PolicyBytesType: AsRef<[u8]>;
+    type PolicyType: SerialPolicies<Self::PolicyBytesType>;
+
     fn metadata(&self) -> &Self::MetadataType;
     fn invoker(&self) -> ExecResult<&AccountAddress>;
     fn self_address(&self) -> ExecResult<&ContractAddress>;
     fn self_balance(&self) -> ExecResult<Amount>;
     fn sender(&self) -> ExecResult<&Address>;
     fn owner(&self) -> ExecResult<&AccountAddress>;
-    fn sender_policies(&self) -> ExecResult<&Policies>;
+    fn sender_policies(&self) -> ExecResult<&Self::PolicyType>;
 }
 
-impl<Policies> HasReceiveContext<Policies> for ReceiveContext<Policies> {
+impl HasReceiveContext for ReceiveContext<Vec<OwnedPolicy>> {
     type MetadataType = ChainMetadata;
+    type PolicyBytesType = Vec<u8>;
+    type PolicyType = Vec<OwnedPolicy>;
 
     fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
@@ -419,7 +429,27 @@ impl<Policies> HasReceiveContext<Policies> for ReceiveContext<Policies> {
 
     fn owner(&self) -> ExecResult<&AccountAddress> { Ok(&self.owner) }
 
-    fn sender_policies(&self) -> ExecResult<&Policies> { Ok(&self.sender_policies) }
+    fn sender_policies(&self) -> ExecResult<&Self::PolicyType> { Ok(&self.sender_policies) }
+}
+
+impl<'a> HasReceiveContext for ReceiveContext<&'a [u8]> {
+    type MetadataType = ChainMetadata;
+    type PolicyBytesType = &'a [u8];
+    type PolicyType = &'a [u8];
+
+    fn metadata(&self) -> &Self::MetadataType { &self.metadata }
+
+    fn invoker(&self) -> ExecResult<&AccountAddress> { Ok(&self.invoker) }
+
+    fn self_address(&self) -> ExecResult<&ContractAddress> { Ok(&self.self_address) }
+
+    fn self_balance(&self) -> ExecResult<Amount> { Ok(self.self_balance) }
+
+    fn sender(&self) -> ExecResult<&Address> { Ok(&self.sender) }
+
+    fn owner(&self) -> ExecResult<&AccountAddress> { Ok(&self.owner) }
+
+    fn sender_policies(&self) -> ExecResult<&Self::PolicyType> { Ok(&self.sender_policies) }
 }
 
 pub trait HasChainMetadata {
@@ -430,7 +460,7 @@ impl HasChainMetadata for ChainMetadata {
     fn slot_time(&self) -> ExecResult<SlotTime> { Ok(self.slot_time) }
 }
 
-fn call_common<C: HasCommon<P, A>, P: SerialPolicies<A>, A: AsRef<[u8]>>(
+fn call_common<C: HasCommon>(
     host: &mut C,
     f: CommonFunc,
     memory: &mut Vec<u8>,
@@ -532,11 +562,9 @@ fn call_common<C: HasCommon<P, A>, P: SerialPolicies<A>, A: AsRef<[u8]>>(
     Ok(())
 }
 
-impl<'a, Ctx, P, A> machine::Host<ProcessedImports> for InitHost<'a, Ctx, P, A>
+impl<'a, Ctx> machine::Host<ProcessedImports> for InitHost<'a, Ctx>
 where
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasInitContext<P>,
+    Ctx: HasInitContext,
 {
     #[cfg_attr(not(feature = "fuzz-coverage"), inline(always))]
     fn tick_initial_memory(&mut self, num_pages: u32) -> machine::RunResult<()> {
@@ -580,11 +608,9 @@ where
     }
 }
 
-impl<'a, Ctx, P, A> ReceiveHost<'a, Ctx, P, A>
+impl<'a, Ctx> ReceiveHost<'a, Ctx>
 where
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasReceiveContext<P>,
+    Ctx: HasReceiveContext,
 {
     pub fn call_receive_only(
         &mut self,
@@ -680,11 +706,9 @@ where
     }
 }
 
-impl<'a, Ctx, P, A> machine::Host<ProcessedImports> for ReceiveHost<'a, Ctx, P, A>
+impl<'a, Ctx> machine::Host<ProcessedImports> for ReceiveHost<'a, Ctx>
 where
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasReceiveContext<P>,
+    Ctx: HasReceiveContext,
 {
     #[cfg_attr(not(feature = "fuzz-coverage"), inline(always))]
     fn tick_initial_memory(&mut self, num_pages: u32) -> machine::RunResult<()> {
@@ -729,12 +753,7 @@ pub type Parameter<'a> = &'a [u8];
 pub type PolicyBytes<'a> = &'a [u8];
 
 /// Invokes an init-function from a given artifact
-pub fn invoke_init<
-    C: RunnableCode,
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasInitContext<P>,
->(
+pub fn invoke_init<C: RunnableCode, Ctx: HasInitContext>(
     artifact: &Artifact<ProcessedImports, C>,
     amount: u64,
     init_ctx: Ctx,
@@ -751,8 +770,6 @@ pub fn invoke_init<
         state: State::new(None),
         param,
         init_ctx: &init_ctx,
-        policy_bytes_type: std::marker::PhantomData,
-        policy_type: std::marker::PhantomData,
     };
 
     let res = match artifact.run(&mut host, init_name, &[Value::I64(amount as i64)]) {
@@ -790,7 +807,7 @@ pub fn invoke_init<
 
 /// Invokes an init-function from a given artifact *bytes*
 #[cfg_attr(not(feature = "fuzz-coverage"), inline)]
-pub fn invoke_init_from_artifact<A: AsRef<[u8]>, P: SerialPolicies<A>, Ctx: HasInitContext<P>>(
+pub fn invoke_init_from_artifact<Ctx: HasInitContext>(
     artifact_bytes: &[u8],
     amount: u64,
     init_ctx: Ctx,
@@ -804,7 +821,7 @@ pub fn invoke_init_from_artifact<A: AsRef<[u8]>, P: SerialPolicies<A>, Ctx: HasI
 
 /// Invokes an init-function from Wasm module bytes
 #[cfg_attr(not(feature = "fuzz-coverage"), inline)]
-pub fn invoke_init_from_source<A: AsRef<[u8]>, P: SerialPolicies<A>, Ctx: HasInitContext<P>>(
+pub fn invoke_init_from_source<Ctx: HasInitContext>(
     source_bytes: &[u8],
     amount: u64,
     init_ctx: Ctx,
@@ -820,11 +837,7 @@ pub fn invoke_init_from_source<A: AsRef<[u8]>, P: SerialPolicies<A>, Ctx: HasIni
 /// accounting instructions inserted before the init function is called.
 /// metering.
 #[cfg_attr(not(feature = "fuzz-coverage"), inline)]
-pub fn invoke_init_with_metering_from_source<
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasInitContext<P>,
->(
+pub fn invoke_init_with_metering_from_source<Ctx: HasInitContext>(
     source_bytes: &[u8],
     amount: u64,
     init_ctx: Ctx,
@@ -837,12 +850,7 @@ pub fn invoke_init_with_metering_from_source<
 }
 
 /// Invokes an receive-function from a given artifact
-pub fn invoke_receive<
-    C: RunnableCode,
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasReceiveContext<P>,
->(
+pub fn invoke_receive<C: RunnableCode, Ctx: HasReceiveContext>(
     artifact: &Artifact<ProcessedImports, C>,
     amount: u64,
     receive_ctx: Ctx,
@@ -861,8 +869,6 @@ pub fn invoke_receive<
         param:             &parameter,
         receive_ctx:       &receive_ctx,
         outcomes:          Outcome::new(),
-        policy_bytes_type: std::marker::PhantomData,
-        policy_type:       std::marker::PhantomData,
     };
 
     let res = match artifact.run(&mut host, receive_name, &[Value::I64(amount as i64)]) {
@@ -944,11 +950,7 @@ impl SerialPolicies<Vec<u8>> for Vec<OwnedPolicy> {
 
 /// Invokes an receive-function from a given artifact *bytes*
 #[cfg_attr(not(feature = "fuzz-coverage"), inline)]
-pub fn invoke_receive_from_artifact<
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasReceiveContext<P>,
->(
+pub fn invoke_receive_from_artifact<Ctx: HasReceiveContext>(
     artifact_bytes: &[u8],
     amount: u64,
     receive_ctx: Ctx,
@@ -963,11 +965,7 @@ pub fn invoke_receive_from_artifact<
 
 /// Invokes an receive-function from Wasm module bytes
 #[cfg_attr(not(feature = "fuzz-coverage"), inline)]
-pub fn invoke_receive_from_source<
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasReceiveContext<P>,
->(
+pub fn invoke_receive_from_source<Ctx: HasReceiveContext>(
     source_bytes: &[u8],
     amount: u64,
     receive_ctx: Ctx,
@@ -983,11 +981,7 @@ pub fn invoke_receive_from_source<
 /// Invokes an receive-function from Wasm module bytes, injects the module with
 /// metering.
 #[cfg_attr(not(feature = "fuzz-coverage"), inline)]
-pub fn invoke_receive_with_metering_from_source<
-    A: AsRef<[u8]>,
-    P: SerialPolicies<A>,
-    Ctx: HasReceiveContext<P>,
->(
+pub fn invoke_receive_with_metering_from_source<Ctx: HasReceiveContext>(
     source_bytes: &[u8],
     amount: u64,
     receive_ctx: Ctx,
