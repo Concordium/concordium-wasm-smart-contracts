@@ -106,7 +106,7 @@ impl HasReceiveContext for ReceiveContextOpt {
     fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 
     fn invoker(&self) -> ExecResult<&AccountAddress> {
-        unwrap_ctx_field(self.invoker.as_ref(), "metadata")
+        unwrap_ctx_field(self.invoker.as_ref(), "invoker")
     }
 
     fn self_address(&self) -> ExecResult<&ContractAddress> {
