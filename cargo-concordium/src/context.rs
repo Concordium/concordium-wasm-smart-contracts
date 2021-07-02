@@ -21,6 +21,10 @@ impl ChainMetadataOpt {
     }
 }
 
+impl Default for ChainMetadataOpt {
+    fn default() -> Self { Self::new() }
+}
+
 impl HasChainMetadata for ChainMetadataOpt {
     fn slot_time(&self) -> ExecResult<SlotTime> { unwrap_ctx_field(self.slot_time, "slotTime") }
 }
@@ -31,6 +35,7 @@ impl HasChainMetadata for ChainMetadataOpt {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InitContextOpt {
+    #[serde(default)]
     metadata:        ChainMetadataOpt,
     init_origin:     Option<AccountAddress>,
     sender_policies: Option<Vec<OwnedPolicy>>,
@@ -68,6 +73,7 @@ impl HasInitContext for InitContextOpt {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReceiveContextOpt {
+    #[serde(default)]
     metadata:                ChainMetadataOpt,
     invoker:                 Option<AccountAddress>,
     self_address:            Option<ContractAddress>,
