@@ -271,9 +271,7 @@ impl State {
     }
 }
 
-pub struct InitHost<'a, Ctx>
-where
-    Ctx: HasInitContext, {
+pub struct InitHost<'a, Ctx> {
     /// Remaining energy for execution.
     pub energy:            Energy,
     /// Remaining amount of activation frames.
@@ -289,9 +287,7 @@ where
     pub init_ctx:          &'a Ctx,
 }
 
-pub struct ReceiveHost<'a, Ctx>
-where
-    Ctx: HasReceiveContext, {
+pub struct ReceiveHost<'a, Ctx> {
     /// Remaining energy for execution.
     pub energy:            Energy,
     /// Remaining amount of activation frames.
