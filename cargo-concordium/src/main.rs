@@ -353,7 +353,7 @@ pub fn main() -> anyhow::Result<()> {
                             serde_json::from_slice(&ctx_content)
                                 .context("Could not parse init context.")?
                         }
-                        None => InitContextOpt::new(),
+                        None => InitContextOpt::default(),
                     };
                     let name = format!("init_{}", contract_name);
                     let res = invoke_init_with_metering_from_source(
@@ -403,7 +403,7 @@ pub fn main() -> anyhow::Result<()> {
                             serde_json::from_slice(&ctx_content)
                                 .context("Could not parse receive context.")?
                         }
-                        None => ReceiveContextOpt::new(),
+                        None => ReceiveContextOpt::default(),
                     };
                     if let Some(balance) = balance {
                         receive_ctx.self_balance =

@@ -7,22 +7,11 @@ use wasm_chain_integration::{ExecResult, HasChainMetadata, HasInitContext, HasRe
 /// A chain metadata with an optional field.
 /// Used when simulating contracts to allow the user to only specify the
 /// necessary context fields.
-#[derive(serde::Deserialize)]
+/// The default value is `None` for all `Option` fields.
+#[derive(serde::Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ChainMetadataOpt {
     slot_time: Option<SlotTime>,
-}
-
-impl ChainMetadataOpt {
-    fn new() -> Self {
-        Self {
-            slot_time: None,
-        }
-    }
-}
-
-impl Default for ChainMetadataOpt {
-    fn default() -> Self { Self::new() }
 }
 
 impl HasChainMetadata for ChainMetadataOpt {
@@ -32,23 +21,15 @@ impl HasChainMetadata for ChainMetadataOpt {
 /// An init context with optional fields.
 /// Used when simulating contracts to allow the user to only specify the
 /// context fields used by the contract.
-#[derive(serde::Deserialize)]
+/// The default value is `None` for all `Option` fields and the default of
+/// `ChainMetadataOpt` for `metadata`.
+#[derive(serde::Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InitContextOpt {
     #[serde(default)]
     metadata:        ChainMetadataOpt,
     init_origin:     Option<AccountAddress>,
     sender_policies: Option<Vec<OwnedPolicy>>,
-}
-
-impl InitContextOpt {
-    pub fn new() -> Self {
-        Self {
-            metadata:        ChainMetadataOpt::new(),
-            init_origin:     None,
-            sender_policies: None,
-        }
-    }
 }
 
 impl HasInitContext for InitContextOpt {
@@ -70,7 +51,9 @@ impl HasInitContext for InitContextOpt {
 /// A receive context with optional fields.
 /// Used when simulating contracts to allow the user to only specify the
 /// context fields used by the contract.
-#[derive(serde::Deserialize)]
+/// The default value is `None` for all `Option` fields and the default of
+/// `ChainMetadataOpt` for `metadata`.
+#[derive(serde::Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReceiveContextOpt {
     #[serde(default)]
@@ -82,20 +65,6 @@ pub(crate) struct ReceiveContextOpt {
     sender:                  Option<Address>,
     owner:                   Option<AccountAddress>,
     sender_policies:         Option<Vec<OwnedPolicy>>,
-}
-
-impl ReceiveContextOpt {
-    pub fn new() -> Self {
-        Self {
-            metadata:        ChainMetadataOpt::new(),
-            invoker:         None,
-            self_address:    None,
-            self_balance:    None,
-            sender:          None,
-            owner:           None,
-            sender_policies: None,
-        }
-    }
 }
 
 impl HasReceiveContext for ReceiveContextOpt {
