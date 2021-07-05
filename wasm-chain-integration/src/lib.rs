@@ -360,6 +360,16 @@ where
     fn policies(&self) -> ExecResult<&Self::PolicyType> { self.receive_ctx.sender_policies() }
 }
 
+/// Types which can act as init contexts.
+///
+/// Used to enable partial JSON contexts when simulating contracts with
+/// cargo-concordium.
+///
+/// We have two implementations:
+///  - `InitContext`, which is used on-chain and always returns `Ok(..)`.
+///  - `InitContextOpt`, which is used during simulation with cargo-concordium
+///    and returns `Ok(..)` for fields supplied in a JSON context, and `Err(..)`
+///    otherwise.
 pub trait HasInitContext {
     type MetadataType: HasChainMetadata;
     type PolicyBytesType: AsRef<[u8]>;
@@ -394,6 +404,16 @@ impl<'a> HasInitContext for InitContext<&'a [u8]> {
     fn sender_policies(&self) -> ExecResult<&Self::PolicyType> { Ok(&self.sender_policies) }
 }
 
+/// Types which can act as receive contexts.
+///
+/// Used to enable partial JSON contexts when simulating contracts with
+/// cargo-concordium.
+///
+/// We have two implementations:
+///  - `ReceiveContext`, which is used on-chain and always returns `Ok(..)`.
+///  - `ReceiveContextOpt`, which is used during simulation with
+///    cargo-concordium and returns `Ok(..)` for fields supplied in a JSON
+///    context, and `Err(..)` otherwise.
 pub trait HasReceiveContext {
     type MetadataType: HasChainMetadata;
     type PolicyBytesType: AsRef<[u8]>;
