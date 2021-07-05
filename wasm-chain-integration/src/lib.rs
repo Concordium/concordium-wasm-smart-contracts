@@ -318,10 +318,7 @@ pub trait HasCommon {
     fn metadata(&self) -> &Self::MetadataType;
 }
 
-impl<'a, Ctx> HasCommon for InitHost<'a, Ctx>
-where
-    Ctx: HasInitContext,
-{
+impl<'a, Ctx: HasInitContext> HasCommon for InitHost<'a, Ctx> {
     type MetadataType = Ctx::MetadataType;
     type PolicyBytesType = Ctx::PolicyBytesType;
     type PolicyType = Ctx::PolicyType;
@@ -339,10 +336,7 @@ where
     fn policies(&self) -> ExecResult<&Self::PolicyType> { self.init_ctx.sender_policies() }
 }
 
-impl<'a, Ctx> HasCommon for ReceiveHost<'a, Ctx>
-where
-    Ctx: HasReceiveContext,
-{
+impl<'a, Ctx: HasReceiveContext> HasCommon for ReceiveHost<'a, Ctx> {
     type MetadataType = Ctx::MetadataType;
     type PolicyBytesType = Ctx::PolicyBytesType;
     type PolicyType = Ctx::PolicyType;
@@ -578,10 +572,7 @@ fn call_common<C: HasCommon>(
     Ok(())
 }
 
-impl<'a, Ctx> machine::Host<ProcessedImports> for InitHost<'a, Ctx>
-where
-    Ctx: HasInitContext,
-{
+impl<'a, Ctx: HasInitContext> machine::Host<ProcessedImports> for InitHost<'a, Ctx> {
     #[cfg_attr(not(feature = "fuzz-coverage"), inline(always))]
     fn tick_initial_memory(&mut self, num_pages: u32) -> machine::RunResult<()> {
         self.energy.charge_memory_alloc(num_pages)
@@ -722,10 +713,7 @@ where
     }
 }
 
-impl<'a, Ctx> machine::Host<ProcessedImports> for ReceiveHost<'a, Ctx>
-where
-    Ctx: HasReceiveContext,
-{
+impl<'a, Ctx: HasReceiveContext> machine::Host<ProcessedImports> for ReceiveHost<'a, Ctx> {
     #[cfg_attr(not(feature = "fuzz-coverage"), inline(always))]
     fn tick_initial_memory(&mut self, num_pages: u32) -> machine::RunResult<()> {
         self.energy.charge_memory_alloc(num_pages)
