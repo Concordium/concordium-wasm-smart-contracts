@@ -374,21 +374,26 @@ pub fn main() -> anyhow::Result<()> {
                             remaining_energy,
                         } => {
                             eprintln!("Init call succeeded. The following logs were produced:");
+                            let state_bytes_len = state.len() as u64;
                             print_result(state, logs)?;
-                            eprintln!(
-                                "Interpreter energy spent is {}",
-                                runner.energy - remaining_energy
-                            )
+                            let interpreter_energy_spent = runner.energy - remaining_energy;
+                            let total_energy_spent = energy_cost(
+                                module.len() as u64,
+                                0,
+                                interpreter_energy_spent,
+                                Some(state_bytes_len),
+                            );
+                            print_energy_usage(interpreter_energy_spent, total_energy_spent)
                         }
                         InitResult::Reject {
                             remaining_energy,
                             reason,
                         } => {
                             eprintln!("Init call rejected with reason {}.", reason);
-                            eprintln!(
-                                "Interpreter energy spent is {}",
-                                runner.energy - remaining_energy
-                            )
+                            let interpreter_energy_spent = runner.energy - remaining_energy;
+                            let total_energy_spent =
+                                energy_cost(module.len() as u64, 0, interpreter_energy_spent, None);
+                            print_energy_usage(interpreter_energy_spent, total_energy_spent)
                         }
                         InitResult::OutOfEnergy => {
                             eprintln!("Init call terminated with out of energy.")
@@ -477,6 +482,7 @@ pub fn main() -> anyhow::Result<()> {
                             eprintln!(
                                 "Receive method succeeded. The following logs were produced."
                             );
+                            let state_bytes_len = state.state.len() as u64;
                             print_result(state, logs)?;
                             eprintln!("The following actions were produced.");
                             for (i, action) in actions.iter().enumerate() {
@@ -521,20 +527,29 @@ pub fn main() -> anyhow::Result<()> {
                                 }
                             }
 
-                            eprintln!(
-                                "Interpreter energy spent is {}",
-                                runner.energy - remaining_energy
-                            )
+                            let interpreter_energy_spent = runner.energy - remaining_energy;
+                            let total_energy_spent = energy_cost(
+                                module.len() as u64,
+                                init_state.len() as u64,
+                                interpreter_energy_spent,
+                                Some(state_bytes_len),
+                            );
+                            print_energy_usage(interpreter_energy_spent, total_energy_spent)
                         }
                         ReceiveResult::Reject {
                             remaining_energy,
                             reason,
                         } => {
                             eprintln!("Receive call rejected with reason {}", reason);
-                            eprintln!(
-                                "Interpreter energy spent is {}",
-                                runner.energy - remaining_energy
-                            )
+
+                            let interpreter_energy_spent = runner.energy - remaining_energy;
+                            let total_energy_spent = energy_cost(
+                                module.len() as u64,
+                                init_state.len() as u64,
+                                interpreter_energy_spent,
+                                None,
+                            );
+                            print_energy_usage(interpreter_energy_spent, total_energy_spent)
                         }
                         ReceiveResult::OutOfEnergy => {
                             eprintln!("Receive call terminated with: out of energy.")
@@ -632,4 +647,27 @@ fn print_contract_schema(
             );
         }
     }
+}
+
+/// Calculate the total NRG cost for the update contract transaction payload.
+/// This still does not include the transaction signature cost.
+fn energy_cost(
+    module_size: u64,
+    init_state_size: u64,
+    interpreter_energy: u64,
+    new_state_size: Option<u64>,
+) -> u64 {
+    (module_size + init_state_size) / 10
+        + (interpreter_energy / 1000)
+        + 300
+        + new_state_size.unwrap_or(0)
+}
+
+/// Print messages with energy usage to stderr.
+fn print_energy_usage(interpreter_energy_spent: u64, total_energy_spent: u64) {
+    eprintln!("Interpreter energy spent is {} mNRG", interpreter_energy_spent);
+    eprintln!(
+        "Update energy spent is {} RNG (Excluding NRG for signing transaction)",
+        total_energy_spent
+    )
 }
