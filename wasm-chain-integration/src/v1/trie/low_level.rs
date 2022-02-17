@@ -531,18 +531,18 @@ pub struct MutableTrie<V> {
     /// generation is empty. The second component of the pair is the number
     /// of nodes that exist at the previous generation. This is used for
     /// pushing and popping generations.
-    generation_roots:   Vec<(Option<usize>, Checkpoint)>,
-    entries:            Vec<Entry>,
-    values:             Vec<V>,
-    borrowed_values:    Vec<Link<Hashed<CachedRef<V>>>>,
-    nodes:              Vec<MutableNode<V>>,
+    generation_roots: Vec<(Option<usize>, Checkpoint)>,
+    entries:          Vec<Entry>,
+    values:           Vec<V>,
+    borrowed_values:  Vec<Link<Hashed<CachedRef<V>>>>,
+    nodes:            Vec<MutableNode<V>>,
     /// Generational table of iterator roots and their corresponding reference
     /// count. Subtrees extending any of the keys in this set are to be
     /// considered locked for modification i.e., it is not allowed to add
     /// new children or remove a child with a path that extends any of the
     /// roots. Note: When a reference count is zero it is expunged from the
     /// table.
-    pub iterator_roots: Vec<std::collections::BTreeMap<Vec<u8>, u16>>,
+    iterator_roots:   Vec<std::collections::BTreeMap<Vec<u8>, u16>>,
 }
 
 #[derive(Debug)]
