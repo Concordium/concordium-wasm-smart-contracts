@@ -1771,7 +1771,7 @@ impl<V> MutableTrie<V> {
     /// tree.
     fn is_subtree_locked(&self, key: &[u8]) -> bool {
         for iter_root in self.iterator_roots.keys() {
-            if key.starts_with(iter_root) {
+            if key.starts_with(iter_root) || iter_root.starts_with(key) {
                 return true;
             }
         }
