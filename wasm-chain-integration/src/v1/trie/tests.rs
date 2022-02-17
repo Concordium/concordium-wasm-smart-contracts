@@ -417,17 +417,17 @@ fn prop_iterator_locked_for_modification_generations() {
                     locked_prefixes.iter().any(|iter| candidate.starts_with(iter.get_key()));
                 if not_allowed {
                     ensure!(
-                        trie.insert(&mut loader, &candidate, data.to_be_bytes().to_vec()).is_err(),
+                        trie.insert(&mut loader, candidate, data.to_be_bytes().to_vec()).is_err(),
                         "{:?} extends one of the iterator keys.",
                         candidate
                     );
                     ensure!(
-                        trie.delete(&mut loader, &candidate).is_err(),
+                        trie.delete(&mut loader, candidate).is_err(),
                         "{:?} extends one of the iterator keys, so deletion is not allowed.",
                         candidate
                     );
                     ensure!(
-                        trie.delete_prefix(&mut loader, &candidate, &mut EmptyCounter)
+                        trie.delete_prefix(&mut loader, candidate, &mut EmptyCounter)
                             .expect("Empty counter does not fail.")
                             .is_err(),
                         "{:?} extends one of the iterator keys, but delete_prefix succeded.",
@@ -435,7 +435,7 @@ fn prop_iterator_locked_for_modification_generations() {
                     )
                 } else {
                     ensure!(
-                        trie.insert(&mut loader, &candidate, data.to_be_bytes().to_vec()).is_ok(),
+                        trie.insert(&mut loader, candidate, data.to_be_bytes().to_vec()).is_ok(),
                         "{:?} does not extend any of the iterator keys, but insertion failed.",
                         candidate
                     );
@@ -445,7 +445,7 @@ fn prop_iterator_locked_for_modification_generations() {
                         if data % 2 == 0 {
                             // now delete the just inserted entry
                             ensure!(
-                                trie.delete(&mut loader, &candidate).is_ok(),
+                                trie.delete(&mut loader, candidate).is_ok(),
                                 "{:?} does not extend any of the iterator keys but deletion \
                                  failed, {:#?}, iterator {:#?}",
                                 candidate,
@@ -454,7 +454,7 @@ fn prop_iterator_locked_for_modification_generations() {
                             );
                         } else {
                             ensure!(
-                                trie.delete_prefix(&mut loader, &candidate, &mut EmptyCounter)
+                                trie.delete_prefix(&mut loader, candidate, &mut EmptyCounter)
                                     .expect("Empty counter does not fail.")
                                     .is_ok(),
                                 "{:?} is not extended by any of iterator keys, nor does it extend \
@@ -465,7 +465,7 @@ fn prop_iterator_locked_for_modification_generations() {
                     } else {
                         // now delete the just inserted entry
                         ensure!(
-                            trie.delete(&mut loader, &candidate).is_ok(),
+                            trie.delete(&mut loader, candidate).is_ok(),
                             "{:?} does not extend any of the iterator keys, but deletion failed.",
                             candidate
                         );

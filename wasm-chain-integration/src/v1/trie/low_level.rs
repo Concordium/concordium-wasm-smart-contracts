@@ -1768,7 +1768,8 @@ impl<V> MutableTrie<V> {
     }
 
     /// Determines if the specified key is extending a locked prefix of the
-    /// tree.
+    /// tree or if a key is extending a locked prefix (i.e. the key is a child
+    /// of an iterator).
     fn is_subtree_locked(&self, key: &[u8]) -> bool {
         for iter_root in self.iterator_roots.keys() {
             if key.starts_with(iter_root) || iter_root.starts_with(key) {
