@@ -531,17 +531,18 @@ pub struct MutableTrie<V> {
     /// generation is empty. The second component of the pair is the number
     /// of nodes that exist at the previous generation. This is used for
     /// pushing and popping generations.
-    generation_roots: Vec<(Option<usize>, Checkpoint)>,
-    entries:          Vec<Entry>,
-    values:           Vec<V>,
-    borrowed_values:  Vec<Link<Hashed<CachedRef<V>>>>,
-    nodes:            Vec<MutableNode<V>>,
-    /// Table of iterator roots and their corresponding reference count.
-    /// Subtrees extending any of the keys in this set are to be considered
-    /// locked for modification i.e., it is not allowed to add new children
-    /// or remove a child with a path that extends any of the roots.
-    /// Note: When a reference count is zero it is expunged from the table.
-    iterator_roots:   std::collections::BTreeMap<Vec<u8>, u16>,
+    generation_roots:   Vec<(Option<usize>, Checkpoint)>,
+    entries:            Vec<Entry>,
+    values:             Vec<V>,
+    borrowed_values:    Vec<Link<Hashed<CachedRef<V>>>>,
+    nodes:              Vec<MutableNode<V>>,
+    /// Generational table of iterator roots and their corresponding reference
+    /// count. Subtrees extending any of the keys in this set are to be
+    /// considered locked for modification i.e., it is not allowed to add
+    /// new children or remove a child with a path that extends any of the
+    /// roots. Note: When a reference count is zero it is expunged from the
+    /// table.
+    pub iterator_roots: Vec<std::collections::BTreeMap<Vec<u8>, u16>>,
 }
 
 #[derive(Debug)]
@@ -924,8 +925,9 @@ type Position = u16;
 
 #[derive(Debug)]
 pub struct Iterator {
-    /// The root of the iterator
+    /// The root and generation of the iterator
     /// This is stored here to allow efficient deleting of iterators.
+    generation:   u32,
     root:         Vec<u8>,
     /// pointer to the table of nodes.
     current_node: usize,
@@ -942,6 +944,9 @@ pub struct Iterator {
 impl Iterator {
     #[inline(always)]
     pub fn get_key(&self) -> &[u8] { &self.key }
+
+    #[inline(always)]
+    pub fn get_root(&self) -> &[u8] { &self.root }
 }
 
 impl<V> CachedRef<Hashed<Node<V>>> {
@@ -1016,7 +1021,7 @@ impl<V> Node<V> {
             nodes: vec![root_node],
             borrowed_values,
             entries,
-            iterator_roots: std::collections::BTreeMap::new(),
+            iterator_roots: vec![std::collections::BTreeMap::new()],
         }
     }
 }
@@ -1034,7 +1039,7 @@ impl<V> MutableTrie<V> {
             nodes:            Vec::new(),
             borrowed_values:  Vec::new(),
             entries:          Vec::new(),
-            iterator_roots:   std::collections::BTreeMap::new(),
+            iterator_roots:   vec![std::collections::BTreeMap::new()],
         }
     }
 
@@ -1055,6 +1060,7 @@ impl<V> MutableTrie<V> {
                 let new_root_node = root.migrate(&mut self.entries, current_generation + 1);
                 let new_root_idx = self.nodes.len();
                 self.nodes.push(new_root_node);
+                self.iterator_roots.push(std::collections::BTreeMap::new());
                 self.generation_roots.push((Some(new_root_idx), Checkpoint {
                     num_nodes,
                     num_values,
@@ -1062,6 +1068,7 @@ impl<V> MutableTrie<V> {
                     num_entries,
                 }));
             } else {
+                self.iterator_roots.push(std::collections::BTreeMap::new());
                 self.generation_roots.push((None, Checkpoint {
                     num_nodes,
                     num_values,
@@ -1080,6 +1087,7 @@ impl<V> MutableTrie<V> {
         self.values.truncate(num_remaining.num_values);
         self.borrowed_values.truncate(num_remaining.num_borrowed_nodes);
         self.entries.truncate(num_remaining.num_entries);
+        self.iterator_roots.pop();
         Some(())
     }
 
@@ -1089,12 +1097,14 @@ impl<V> MutableTrie<V> {
     pub fn normalize(&mut self, root: u32) {
         let new_len = root as usize + 1;
         let one_past_new_root = self.generation_roots.get(new_len).copied();
+        self.iterator_roots.push(std::collections::BTreeMap::new());
         if let Some((_, num_remaining)) = one_past_new_root {
             self.generation_roots.truncate(new_len);
             self.nodes.truncate(num_remaining.num_nodes);
             self.values.truncate(num_remaining.num_values);
             self.borrowed_values.truncate(num_remaining.num_borrowed_nodes);
             self.entries.truncate(num_remaining.num_entries);
+            self.iterator_roots.truncate(new_len);
         }
     }
 
@@ -1180,16 +1190,11 @@ impl<V> MutableTrie<V> {
 
     /// Deletes an iterator.
     /// If an iterator was deleted then return `true` otherwise `false`.
+    /// PRECONDITION: The generation provided must be valid.
     pub fn delete_iter(&mut self, iterator: &Iterator) -> bool {
-        if let Some(rc) = self.iterator_roots.get_mut(&iterator.root) {
-            *rc = rc.saturating_sub(1);
-            if *rc == 0 {
-                self.iterator_roots.remove(&iterator.root);
-            }
-            true
-        } else {
-            false
-        }
+        let iterator_roots = &mut self.iterator_roots;
+        let generation = iterator.generation as usize;
+        unlock_subtree(&mut iterator_roots[generation], &iterator.root)
     }
 
     pub fn iter(
@@ -1212,21 +1217,24 @@ impl<V> MutableTrie<V> {
             let mut stem_iter = node.path.as_ref().iter();
             match follow_stem(&mut key_iter, &mut stem_iter) {
                 FollowStem::Equal => {
-                    if !lock_subtree(iterator_roots, key) {
+                    let generation = node.generation;
+                    if !lock_subtree(&mut iterator_roots[generation as usize], key) {
                         return Err(TooManyIterators);
                     }
                     return Ok(Some(Iterator {
-                        root:         key.into(),
+                        root: key.into(),
                         current_node: node_idx,
-                        key:          key.into(),
-                        next_child:   None,
-                        stack:        Vec::new(),
+                        key: key.into(),
+                        next_child: None,
+                        stack: Vec::new(),
+                        generation,
                     }));
                 }
                 FollowStem::KeyIsPrefix {
                     stem_step,
                 } => {
-                    if !lock_subtree(iterator_roots, key) {
+                    let generation = node.generation;
+                    if !lock_subtree(&mut iterator_roots[generation as usize], key) {
                         return Err(TooManyIterators);
                     }
                     let stem_slice = stem_iter.as_slice();
@@ -1235,11 +1243,12 @@ impl<V> MutableTrie<V> {
                     root_key.push(stem_step);
                     root_key.extend_from_slice(stem_slice);
                     return Ok(Some(Iterator {
-                        root:         root_key.clone(),
+                        root: key.into(),
                         current_node: node_idx,
-                        key:          root_key,
-                        next_child:   None,
-                        stack:        Vec::new(),
+                        key: root_key,
+                        next_child: None,
+                        stack: Vec::new(),
+                        generation,
                     }));
                 }
                 FollowStem::StemIsPrefix {
@@ -1469,9 +1478,6 @@ impl<V> MutableTrie<V> {
         loader: &mut impl BackingStoreLoad,
         key: &[Key],
     ) -> Result<bool, AttemptToModifyLockedArea> {
-        if self.is_subtree_locked(key) {
-            return Err(AttemptToModifyLockedArea);
-        }
         let mut key_iter = key.iter();
         let owned_nodes = &mut self.nodes;
         let borrowed_values = &mut self.borrowed_values;
@@ -1483,8 +1489,16 @@ impl<V> MutableTrie<V> {
         } else {
             return Ok(false);
         };
+        let iterator_roots = &mut self.iterator_roots;
         loop {
             let node = unsafe { owned_nodes.get_unchecked_mut(node_idx) };
+            if is_subtree_locked(
+                SubtreeAction::InsertOrDelete,
+                &iterator_roots[node.generation as usize],
+                key,
+            ) {
+                return Err(AttemptToModifyLockedArea);
+            }
             match follow_stem(&mut key_iter, &mut node.path.as_ref().iter()) {
                 FollowStem::Equal => {
                     // we found it, delete the value first and save it for returning.
@@ -1637,9 +1651,6 @@ impl<V> MutableTrie<V> {
         key: &[Key],
         counter: &mut C,
     ) -> Result<Result<bool, AttemptToModifyLockedArea>, C::Err> {
-        if self.is_subtree_locked(key) {
-            return Ok(Err(AttemptToModifyLockedArea));
-        }
         let mut key_iter = key.iter();
         let owned_nodes = &mut self.nodes;
         let borrowed_values = &mut self.borrowed_values;
@@ -1651,8 +1662,16 @@ impl<V> MutableTrie<V> {
         } else {
             return Ok(Ok(false));
         };
+        let iterator_roots = &mut self.iterator_roots;
         loop {
             let node = unsafe { owned_nodes.get_unchecked_mut(node_idx) };
+            if is_subtree_locked(
+                SubtreeAction::DeletePrefix,
+                &iterator_roots[node.generation as usize],
+                key,
+            ) {
+                return Ok(Err(AttemptToModifyLockedArea));
+            }
             match follow_stem(&mut key_iter, &mut node.path.as_ref().iter()) {
                 FollowStem::StemIsPrefix {
                     key_step,
@@ -1767,18 +1786,6 @@ impl<V> MutableTrie<V> {
         }
     }
 
-    /// Determines if the specified key is extending a locked prefix of the
-    /// tree or if a key is extending a locked prefix (i.e. the key is a child
-    /// of an iterator).
-    fn is_subtree_locked(&self, key: &[u8]) -> bool {
-        for iter_root in self.iterator_roots.keys() {
-            if key.starts_with(iter_root) || iter_root.starts_with(key) {
-                return true;
-            }
-        }
-        false
-    }
-
     /// Returns the new entry id, and potentially an existing one if the value
     /// at the key existed.
     pub fn insert(
@@ -1787,10 +1794,6 @@ impl<V> MutableTrie<V> {
         key: &[Key],
         new_value: V,
     ) -> Result<(EntryId, Option<EntryId>), AttemptToModifyLockedArea> {
-        if self.is_subtree_locked(key) {
-            return Err(AttemptToModifyLockedArea);
-        }
-
         let mut key_iter = key.iter();
         let generation_root =
             self.generation_roots.last().expect("There should always be at least 1 generation.").0;
@@ -1823,6 +1826,14 @@ impl<V> MutableTrie<V> {
             return Ok((entry_idx, None));
         };
         let generation = self.nodes[node_idx].generation;
+        let iterator_roots = &mut self.iterator_roots;
+        if is_subtree_locked(
+            SubtreeAction::InsertOrDelete,
+            &iterator_roots[generation as usize],
+            key,
+        ) {
+            return Err(AttemptToModifyLockedArea);
+        }
         let owned_nodes = &mut self.nodes;
         let borrowed_values = &mut self.borrowed_values;
         let entries = &mut self.entries;
@@ -2329,6 +2340,36 @@ impl<V: Clone> Node<V> {
     }
 }
 
+enum SubtreeAction {
+    InsertOrDelete,
+    DeletePrefix,
+}
+/// todo doc.
+fn is_subtree_locked(
+    action: SubtreeAction,
+    iterator_roots: &std::collections::BTreeMap<Vec<u8>, u16>,
+    key: &[u8],
+) -> bool {
+    for iter_root in iterator_roots.keys() {
+        match action {
+            SubtreeAction::InsertOrDelete => {
+                if key.starts_with(iter_root) {
+                    return true;
+                }
+            }
+            SubtreeAction::DeletePrefix => {
+                if key.starts_with(iter_root) || iter_root.starts_with(key) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Lock the subtree for modifications
+/// The key is the root of the subtree to be locked.
+/// Returns true if the iterator was added to the iterator_roots otherwise false
 fn lock_subtree(iterator_roots: &mut std::collections::BTreeMap<Vec<u8>, u16>, key: &[u8]) -> bool {
     if let Some(iter) = iterator_roots.get_mut(key) {
         if let Some(new_value) = iter.checked_add(1) {
@@ -2341,4 +2382,111 @@ fn lock_subtree(iterator_roots: &mut std::collections::BTreeMap<Vec<u8>, u16>, k
         iterator_roots.insert(key.to_vec(), 1);
         true
     }
+}
+
+/// Unlock the tree for modifications.
+/// PRECONDITION: The provided key is an actual root of an iterator.
+fn unlock_subtree(
+    iterator_roots: &mut std::collections::BTreeMap<Vec<u8>, u16>,
+    key: &[u8],
+) -> bool {
+    if let Some(rc) = iterator_roots.get_mut(key) {
+        *rc = rc.saturating_sub(1);
+        if *rc == 0 {
+            iterator_roots.remove(key);
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/// todo write these tests with quickcheck
+#[test]
+fn test_locking_insert() -> anyhow::Result<()> {
+    let mut locked_roots = std::collections::BTreeMap::new();
+    lock_subtree(&mut locked_roots, &[0, 1]);
+    anyhow::ensure!(
+        !is_subtree_locked(SubtreeAction::InsertOrDelete, &locked_roots, &[0]),
+        "Should not be locked"
+    );
+    anyhow::ensure!(
+        is_subtree_locked(SubtreeAction::InsertOrDelete, &locked_roots, &[0, 1]),
+        "Should be locked"
+    );
+    anyhow::ensure!(
+        is_subtree_locked(SubtreeAction::InsertOrDelete, &locked_roots, &[0, 1, 2]),
+        "Should be locked"
+    );
+    unlock_subtree(&mut locked_roots, &[0, 1]);
+    anyhow::ensure!(
+        !is_subtree_locked(SubtreeAction::InsertOrDelete, &locked_roots, &[0, 1]),
+        "Should not be locked"
+    );
+    anyhow::ensure!(
+        !is_subtree_locked(SubtreeAction::InsertOrDelete, &locked_roots, &[0, 1, 2]),
+        "Should not be locked"
+    );
+    lock_subtree(&mut locked_roots, &Vec::new());
+    anyhow::ensure!(
+        is_subtree_locked(SubtreeAction::InsertOrDelete, &locked_roots, &[]),
+        "Should be locked"
+    );
+    anyhow::ensure!(
+        is_subtree_locked(SubtreeAction::InsertOrDelete, &locked_roots, &[0]),
+        "Should be locked"
+    );
+    Ok(())
+}
+
+#[test]
+fn test_locking_prefix_delete() -> anyhow::Result<()> {
+    let mut locked_roots = std::collections::BTreeMap::new();
+    lock_subtree(&mut locked_roots, &[0, 1]);
+    lock_subtree(&mut locked_roots, &[0, 1]);
+    anyhow::ensure!(
+        is_subtree_locked(SubtreeAction::DeletePrefix, &locked_roots, &[0]),
+        "Should be locked"
+    );
+    anyhow::ensure!(
+        is_subtree_locked(SubtreeAction::DeletePrefix, &locked_roots, &[0, 1]),
+        "Should be locked"
+    );
+    anyhow::ensure!(
+        is_subtree_locked(SubtreeAction::DeletePrefix, &locked_roots, &[0, 1, 2]),
+        "Should be locked"
+    );
+    anyhow::ensure!(
+        !is_subtree_locked(SubtreeAction::DeletePrefix, &locked_roots, &[0, 2]),
+        "Should not be locked"
+    );
+    unlock_subtree(&mut locked_roots, &[0, 1]);
+    anyhow::ensure!(
+        is_subtree_locked(SubtreeAction::DeletePrefix, &locked_roots, &[0, 1, 2]),
+        "Should be locked"
+    );
+    unlock_subtree(&mut locked_roots, &[0, 1]);
+    anyhow::ensure!(
+        !is_subtree_locked(SubtreeAction::DeletePrefix, &locked_roots, &[0]),
+        "Should not be locked"
+    );
+    anyhow::ensure!(
+        !is_subtree_locked(SubtreeAction::DeletePrefix, &locked_roots, &[0, 1]),
+        "Should not be locked"
+    );
+    anyhow::ensure!(
+        !is_subtree_locked(SubtreeAction::DeletePrefix, &locked_roots, &[0, 1, 2]),
+        "Should not be locked"
+    );
+    lock_subtree(&mut locked_roots, &[0, 1]);
+    lock_subtree(&mut locked_roots, &Vec::new());
+    anyhow::ensure!(
+        is_subtree_locked(SubtreeAction::DeletePrefix, &locked_roots, &[]),
+        "Should be locked"
+    );
+    anyhow::ensure!(
+        is_subtree_locked(SubtreeAction::DeletePrefix, &locked_roots, &[0]),
+        "Should be locked"
+    );
+    Ok(())
 }
