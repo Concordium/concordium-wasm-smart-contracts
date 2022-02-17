@@ -373,7 +373,7 @@ fn prop_iterator_locked_for_modification_multiple() {
             }
             // cleanup the trie
             for iter in &locked_prefixes {
-                trie.delete_iter(iter)
+                ensure!(trie.delete_iter(iter), "Iterator should be removed.")
             }
         }
         Ok(())
@@ -399,7 +399,7 @@ fn prop_iterator_locked_for_modification_generations() {
             if pop_gen {
                 if let Some(locked_prefixes) = generation_cleanup_stack.pop() {
                     for iter in &locked_prefixes {
-                        trie.delete_iter(iter)
+                        ensure!(trie.delete_iter(iter), "Iterator should be removed.");
                     }
                 }
             }
@@ -509,7 +509,7 @@ fn prop_iterator_locked_for_modification() {
         for (prefix, _) in inputs.iter() {
             let locked_prefix = prefix.clone();
 
-            if let Some(mut iter) = trie
+            if let Some(iter) = trie
                 .iter(&mut loader, &locked_prefix)
                 .expect("This is the first iterator, so no overflow.")
             {
@@ -569,7 +569,7 @@ fn prop_iterator_locked_for_modification() {
                     step_up
                 );
 
-                trie.delete_iter(&mut iter);
+                trie.delete_iter(&iter);
                 ensure!(
                     trie.insert(&mut loader, &locked_prefix_extended, vec![]).is_ok(),
                     "The subtree should not be locked for locked_prefix_extended (insertion): \
