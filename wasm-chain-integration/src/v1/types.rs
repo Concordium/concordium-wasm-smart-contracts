@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use super::{trie, Interrupt, ParameterVec, StateLessReceiveHost};
 use crate::{constants, resumption::InterruptedState, type_matches, v0, InterpreterEnergy};
 use anyhow::{bail, ensure, Context};
@@ -427,7 +425,7 @@ impl validate::ValidateImportExport for ConcordiumAllowedImports {
                 "state_create_entry" => type_matches!(ty => [I32, I32]; I64),
                 "state_delete_entry" => type_matches!(ty => [I64]; I32),
                 "state_delete_prefix" => type_matches!(ty => [I32, I32]; I32),
-                "state_iterate_prefix" => type_matches!(ty => [I32, I32]; I32),
+                "state_iterate_prefix" => type_matches!(ty => [I32, I32]; I64),
                 "state_iterator_next" => type_matches!(ty => [I64]; I64),
                 "state_iterator_delete" => type_matches!(ty => [I64]; I32),
                 "state_iterator_key_size" => type_matches!(ty => [I64]; I32),
@@ -436,8 +434,6 @@ impl validate::ValidateImportExport for ConcordiumAllowedImports {
                 "state_entry_write" => type_matches!(ty => [I64, I32, I32, I32]; I32),
                 "state_entry_size" => type_matches!(ty => [I64]; I32),
                 "state_entry_resize" => type_matches!(ty => [I64, I32]; I32),
-                "state_entry_key_read" => type_matches!(ty => [I64, I32, I32, I32]; I32),
-                "state_entry_key_size" => type_matches!(ty => [I64]; I32),
                 _ => false,
             }
         } else {
@@ -611,7 +607,7 @@ pub(crate) struct InstanceStateEntryOption {
 
 impl InstanceStateEntryOption {
     pub const NEW_NONE: Self = Self {
-        index: 0,
+        index: u64::MAX,
     };
 
     #[inline]
@@ -619,7 +615,35 @@ impl InstanceStateEntryOption {
     /// This assumes both value are small enough.
     pub fn new_some(gen: Generation, idx: usize) -> Self {
         Self {
-            index: u64::from(gen) << 32 | idx as u64 | 1u64 << 63,
+            index: u64::from(gen) << 32 | idx as u64,
+        }
+    }
+}
+
+/// An encoding of `Result<Option<Iterator>>`. The Result is for the case where
+/// we have too many iterators already at the given location, the Option is for
+/// when the key does not point to a valid part of the tree.
+#[derive(Debug, Clone, Copy, From, Into)]
+#[repr(transparent)]
+pub(crate) struct InstanceStateEntryResultOption {
+    index: u64,
+}
+
+impl InstanceStateEntryResultOption {
+    pub const NEW_ERR: Self = Self {
+        index: u64::MAX & !(1u64 << 62), // second bit is 0
+    };
+    pub const NEW_OK_NONE: Self = Self {
+        index: u64::MAX,
+    };
+
+    /// Construct a new index from a generation and index.
+    /// This assumes both values are small enough, in particular that idx <=
+    /// 2^31.
+    #[inline]
+    pub fn new_ok_some(gen: Generation, idx: usize) -> Self {
+        Self {
+            index: u64::from(gen) << 32 | idx as u64,
         }
     }
 }
@@ -651,21 +675,21 @@ pub(crate) struct InstanceStateIteratorResultOption {
     index: u64,
 }
 
-// TODO: Make sure this is a sensible encoding.
 impl InstanceStateIteratorResultOption {
     pub const NEW_ERR: Self = Self {
-        index: 1u64 << 62,
+        index: u64::MAX & !(1u64 << 62), // second bit is 0
     };
     pub const NEW_OK_NONE: Self = Self {
-        index: 0,
+        index: u64::MAX,
     };
 
     /// Construct a new index from a generation and index.
-    /// This assumes both values are small enough.
+    /// This assumes both values are small enough, in particular that idx <=
+    /// 2^31
     #[inline]
     pub fn new_ok_some(gen: Generation, idx: usize) -> Self {
         Self {
-            index: u64::from(gen) << 32 | idx as u64 | 1u64 << 63,
+            index: u64::from(gen) << 32 | idx as u64,
         }
     }
 }
@@ -676,8 +700,8 @@ impl trie::TraversalCounter for InterpreterEnergy {
     type Err = anyhow::Error;
 
     #[inline(always)]
-    fn tick(&mut self) -> Result<(), Self::Err> {
-        self.tick_energy(crate::constants::TREE_TRAVERSAL_STEP_COST)
+    fn tick(&mut self, num: u64) -> Result<(), Self::Err> {
+        self.tick_energy(crate::constants::TREE_TRAVERSAL_STEP_COST * num)
     }
 }
 
@@ -715,38 +739,42 @@ impl<'a, BackingStore: trie::BackingStoreLoad> InstanceState<'a, BackingStore> {
     /// method succeeds if and only if the entry would not be created in the
     /// subtree that is locked due to an iterator. In that case this returns (an
     /// encoding of) [None].
-    pub(crate) fn create_entry(&mut self, key: &[u8]) -> InstanceStateEntryOption {
+    pub(crate) fn create_entry(&mut self, key: &[u8]) -> StateResult<InstanceStateEntryOption> {
+        ensure!(key.len() <= constants::MAX_KEY_SIZE, "Maximum key length exceeded.");
         if let Ok(id) = self.state_trie.insert(&mut self.backing_store, key, Vec::new()) {
             let idx = self.entry_mapping.len();
             self.entry_mapping.push(Some(EntryWithKey {
                 id:  id.0,
                 key: key.into(),
             }));
-            InstanceStateEntryOption::new_some(self.current_generation, idx)
+            Ok(InstanceStateEntryOption::new_some(self.current_generation, idx))
         } else {
-            InstanceStateEntryOption::NEW_NONE
+            Ok(InstanceStateEntryOption::NEW_NONE)
         }
     }
 
     /// Delete an entry. Return
-    /// - 0 if there was no entry with the given id existed, or the entry was
-    ///   invalidated
+    /// - 0 if the entry was invalidated/deleted already
     /// - 1 if an entry existed and was not invalidated.
-    pub(crate) fn delete_entry(&mut self, entry: InstanceStateEntry) -> StateResult<u32> {
+    pub(crate) fn delete_entry(&mut self, entry: InstanceStateEntry) -> u32 {
         let (gen, idx) = entry.split();
-        ensure!(gen == self.current_generation, "Incorrect entry id generation.");
+        if gen != self.current_generation {
+            return u32::MAX;
+        }
         if let Some(entry) = self.entry_mapping.get_mut(idx) {
             if let Some(entry) = std::mem::take(entry) {
                 if let Ok(true) = self.state_trie.delete(&mut self.backing_store, &entry.key) {
-                    Ok(1)
+                    1
                 } else {
-                    Ok(0)
+                    // entry did not exist
+                    u32::MAX
                 }
             } else {
-                Ok(0)
+                // entry was already invalidated
+                u32::MAX
             }
         } else {
-            Ok(0)
+            u32::MAX
         }
     }
 
@@ -772,7 +800,7 @@ impl<'a, BackingStore: trie::BackingStoreLoad> InstanceState<'a, BackingStore> {
     }
 
     /// Get an iterator for the given prefix.
-    /// Returns
+    /// Returns an encoding of
     /// - an error if there are too many iterators with the given prefix
     /// - Ok(None) if the prefix points to an empty part of the tree
     /// - Ok(Some(id)) with an iterator id in case an iterator is found. This
@@ -793,34 +821,43 @@ impl<'a, BackingStore: trie::BackingStoreLoad> InstanceState<'a, BackingStore> {
 
     /// Advance the iterator. Returns None if the iterator is exhausted, and
     /// otherwise an id of an entry.
+    /// This charges energy based on how much of the tree needed to be
+    /// traversed, expressed in terms of bytes of the key that changed.
     pub(crate) fn iterator_next(
         &mut self,
+        energy: &mut InterpreterEnergy,
         iter: InstanceStateIterator,
-    ) -> StateResult<InstanceStateEntryOption> {
+    ) -> StateResult<InstanceStateEntryResultOption> {
         let (gen, idx) = iter.split();
-        ensure!(gen == self.current_generation, "Incorrect iterator generation.");
+        if gen != self.current_generation {
+            return Ok(InstanceStateEntryResultOption::NEW_ERR);
+        }
         if let Some(iter) = self.iterators.get_mut(idx).and_then(Option::as_mut) {
-            if let Some(id) = self.state_trie.next(&mut self.backing_store, iter) {
+            if let Some(id) = self.state_trie.next(&mut self.backing_store, iter, energy)? {
                 let idx = self.entry_mapping.len();
                 self.entry_mapping.push(Some(EntryWithKey {
                     id,
                     key: iter.get_key().into(),
                 }));
-                Ok(InstanceStateEntryOption::new_some(self.current_generation, idx))
+                Ok(InstanceStateEntryResultOption::new_ok_some(self.current_generation, idx))
             } else {
-                Ok(InstanceStateEntryOption::NEW_NONE)
+                Ok(InstanceStateEntryResultOption::NEW_OK_NONE)
             }
         } else {
-            bail!("Invalid iterator.")
+            Ok(InstanceStateEntryResultOption::NEW_ERR)
         }
     }
 
     /// Delete the iterator.
-    /// Returns 1 if the iterator was successfully deleted, and 0 if the
-    /// iterator was already deleted.
-    pub(crate) fn iterator_delete(&mut self, iter: InstanceStateIterator) -> StateResult<u32> {
+    /// Returns
+    /// - 1 if the iterator was successfully deleted
+    /// - 0 if the iterator was already deleted
+    /// - u32::MAX if the iterator could not be found
+    pub(crate) fn iterator_delete(&mut self, iter: InstanceStateIterator) -> u32 {
         let (gen, idx) = iter.split();
-        ensure!(gen == self.current_generation, "Incorrect iterator generation.");
+        if gen != self.current_generation {
+            return u32::MAX;
+        }
         match self.iterators.get_mut(idx) {
             Some(iter) => match iter {
                 Some(existing_iter) => {
@@ -828,25 +865,27 @@ impl<'a, BackingStore: trie::BackingStoreLoad> InstanceState<'a, BackingStore> {
                     self.state_trie.delete_iter(existing_iter);
                     // Finally we remove the iterator in the instance by setting it to `None`.
                     *iter = None;
-                    Ok(1)
+                    1
                 }
                 // already deleted.
-                None => Ok(0),
+                None => 0,
             },
             // iterator did not exist.
-            None => bail!("Invalid iterator."),
+            None => u32::MAX
         }
     }
 
     /// Return the size (in bytes) of the key the iterator is currently located
     /// at.
-    pub(crate) fn iterator_key_size(&mut self, iter: InstanceStateIterator) -> StateResult<u32> {
+    pub(crate) fn iterator_key_size(&mut self, iter: InstanceStateIterator) -> u32 {
         let (gen, idx) = iter.split();
-        ensure!(gen == self.current_generation, "Incorrect iterator generation.");
+        if gen != self.current_generation {
+            return u32::MAX
+        }
         if let Some(iter) = self.iterators.get(idx).and_then(Option::as_ref) {
-            Ok(iter.get_key().len() as u32)
+            iter.get_key().len() as u32
         } else {
-            bail!("Invalid iterator.")
+            u32::MAX
         }
     }
 
@@ -856,17 +895,19 @@ impl<'a, BackingStore: trie::BackingStoreLoad> InstanceState<'a, BackingStore> {
         iter: InstanceStateIterator,
         dest: &mut [u8],
         offset: u32,
-    ) -> StateResult<u32> {
+    ) -> u32 {
         let (gen, idx) = iter.split();
-        ensure!(gen == self.current_generation, "Incorrect iterator generation.");
+        if gen != self.current_generation {
+            return u32::MAX
+        }
         if let Some(iter) = self.iterators.get(idx).and_then(Option::as_ref) {
             let key = iter.get_key();
             let offset = std::cmp::min(key.len(), offset as usize);
             let num_copied = std::cmp::min(key.len().saturating_sub(offset), dest.len());
             dest[0..num_copied].copy_from_slice(&key[offset..offset + num_copied]);
-            Ok(0)
+            num_copied as u32
         } else {
-            bail!("Invalid iterator.")
+            u32::MAX
         }
     }
 
@@ -877,9 +918,11 @@ impl<'a, BackingStore: trie::BackingStoreLoad> InstanceState<'a, BackingStore> {
         entry: InstanceStateEntry,
         dest: &mut [u8],
         offset: u32,
-    ) -> StateResult<u32> {
+    ) -> u32 {
         let (gen, idx) = entry.split();
-        ensure!(gen == self.current_generation, "Incorrect entry id generation.");
+        if gen != self.current_generation {
+            return u32::MAX;
+        }
         if let Some(entry) = self.entry_mapping.get(idx).and_then(Option::as_ref) {
             let res = self.state_trie.with_entry(entry.id, &mut self.backing_store, |v| {
                 let offset = std::cmp::min(v.len(), offset as usize);
@@ -888,19 +931,18 @@ impl<'a, BackingStore: trie::BackingStoreLoad> InstanceState<'a, BackingStore> {
                 num_copied as u32
             });
             if let Some(res) = res {
-                Ok(res)
+                res
             } else {
                 // Entry has been invalidated.
-                Ok(u32::MAX)
+                u32::MAX
             }
         } else {
-            bail!("Invalid entry.");
+            u32::MAX
         }
     }
 
     /// Read a section of the entry, and return how much was written, or
     /// u32::MAX, in case the entry has already been invalidated.
-    // TODO: u32::MAX-1 is the maximum size of an entry. Ensure it.
     pub(crate) fn entry_write(
         &mut self,
         entry: InstanceStateEntry,
@@ -908,17 +950,28 @@ impl<'a, BackingStore: trie::BackingStoreLoad> InstanceState<'a, BackingStore> {
         offset: u32,
     ) -> StateResult<u32> {
         let (gen, idx) = entry.split();
-        ensure!(gen == self.current_generation, "Incorrect entry id generation.");
+        if gen != self.current_generation {
+            return Ok(u32::MAX);
+        }
         if let Some(entry) = self.entry_mapping.get(idx).and_then(Option::as_ref) {
             if let Some(v) = self.state_trie.get_mut(entry.id, &mut self.backing_store) {
                 let offset = offset as usize;
                 if offset <= v.len() {
-                    let end = offset.checked_add(src.len()).context("Too much data.")?;
+                    // by state invariants, v.len() <= MAX_ENTRY_SIZE.
+                    // Hence offset <= MAX_ENTRY_SIZE, and thus offset <= end.
+                    // So the below will work correctly.
+                    let end = std::cmp::min(
+                        constants::MAX_ENTRY_SIZE,
+                        offset.checked_add(src.len()).context("Too much data.")?,
+                    );
                     if v.len() < end {
                         v.resize(end, 0u8);
                     }
-                    (&mut v[offset..end]).write_all(src)?;
-                    Ok(src.len() as u32)
+                    let num_bytes_to_write = end - offset;
+                    v[offset..end].copy_from_slice(&src[0..num_bytes_to_write]);
+                    // as below is correct, since num_bytes_to_write <= end <= MAX_ENTRY_SIZE <
+                    // u32::MAX
+                    Ok(num_bytes_to_write as u32)
                 } else {
                     // cannot start writing past the entry, so write nothing.
                     Ok(0)
@@ -928,34 +981,35 @@ impl<'a, BackingStore: trie::BackingStoreLoad> InstanceState<'a, BackingStore> {
                 Ok(u32::MAX)
             }
         } else {
-            bail!("Invalid entry.");
+            Ok(u32::MAX)
         }
     }
 
     /// Return the size of the entry, or u32::MAX in case the entry has already
     /// been invalidated.
-    pub(crate) fn entry_size(&mut self, entry: InstanceStateEntry) -> StateResult<u32> {
+    pub(crate) fn entry_size(&mut self, entry: InstanceStateEntry) -> u32 {
         let (gen, idx) = entry.split();
-        ensure!(gen == self.current_generation, "Incorrect entry id generation.");
+        if gen != self.current_generation {
+            return u32::MAX;
+        }
         if let Some(entry) = self.entry_mapping.get(idx).and_then(Option::as_ref) {
             let res =
                 self.state_trie.with_entry(entry.id, &mut self.backing_store, |v| v.len() as u32);
             if let Some(res) = res {
-                Ok(res)
+                res
             } else {
                 // entry was invalidated.
-                Ok(u32::MAX)
+                u32::MAX
             }
         } else {
-            bail!("Invalid entry.");
+            u32::MAX
         }
     }
 
     /// Resize the entry to the new size. Returns
     /// - 0 if this was unsuccessful because the new state is too big
-    /// - 1 if entry was already invalidated
-    /// - 2 if successful
-    /// TODO: Ensure max size < u32::MAX
+    /// - u32::MAX if entry was already invalidated
+    /// - 1 if successful
     pub(crate) fn entry_resize(
         &mut self,
         energy: &mut InterpreterEnergy,
@@ -963,8 +1017,13 @@ impl<'a, BackingStore: trie::BackingStoreLoad> InstanceState<'a, BackingStore> {
         new_size: u32,
     ) -> StateResult<u32> {
         let (gen, idx) = entry.split();
-        ensure!(gen == self.current_generation, "Incorrect entry id generation.");
+        if gen != self.current_generation {
+            return Ok(u32::MAX);
+        }
         if let Some(entry) = self.entry_mapping.get(idx).and_then(Option::as_ref) {
+            if new_size as usize > constants::MAX_ENTRY_SIZE {
+                return Ok(0);
+            }
             if let Some(v) = self.state_trie.get_mut(entry.id, &mut self.backing_store) {
                 let old_size = v.len() as u64;
                 let new_size = u64::from(new_size);
@@ -973,12 +1032,12 @@ impl<'a, BackingStore: trie::BackingStoreLoad> InstanceState<'a, BackingStore> {
                         .tick_energy(constants::additional_state_size_cost(new_size - old_size))?;
                 }
                 v.resize(new_size as usize, 0u8);
-                Ok(2)
-            } else {
                 Ok(1)
+            } else {
+                Ok(u32::MAX)
             }
         } else {
-            bail!("Invalid entry.");
+            Ok(u32::MAX)
         }
     }
 }
