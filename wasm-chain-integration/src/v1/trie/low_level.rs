@@ -544,21 +544,6 @@ struct Generation {
     iterator_roots: std::collections::BTreeMap<Rc<[u8]>, u16>,
 }
 
-impl Generation {
-    fn new() -> Self {
-        Generation {
-            roots:          Some(0),
-            checkpoint:     Checkpoint {
-                num_nodes:          0,
-                num_values:         0,
-                num_borrowed_nodes: 0,
-                num_entries:        0,
-            },
-            iterator_roots: std::collections::BTreeMap::new(),
-        }
-    }
-}
-
 impl Default for Generation {
     fn default() -> Self {
         Generation {
@@ -1051,7 +1036,16 @@ impl<V> Node<V> {
         let mut entries = Vec::new();
         let root_node = self.thaw(&mut borrowed_values, &mut entries, generation);
         MutableTrie {
-            generations: vec![Generation::new()],
+            generations: vec![Generation {
+                roots:          Some(0),
+                checkpoint:     Checkpoint {
+                    num_nodes:          0,
+                    num_values:         0,
+                    num_borrowed_nodes: 0,
+                    num_entries:        0,
+                },
+                iterator_roots: std::collections::BTreeMap::new(),
+            }],
             values: Vec::new(),
             nodes: vec![root_node],
             borrowed_values,
