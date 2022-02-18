@@ -1241,8 +1241,7 @@ impl<V> MutableTrie<V> {
         let owned_nodes = &mut self.nodes;
         let borrowed_values = &mut self.borrowed_values;
         let entries = &mut self.entries;
-        // todo avoid clone
-        let mut generation = if let Some(generation) = self.generations.last_mut().cloned() {
+        let generation = if let Some(generation) = self.generations.last_mut() {
             generation
         } else {
             return Ok(None);
@@ -1257,7 +1256,10 @@ impl<V> MutableTrie<V> {
             let mut stem_iter = node.path.as_ref().iter();
             match follow_stem(&mut key_iter, &mut stem_iter) {
                 FollowStem::Equal => {
-                    if !lock_subtree(&mut generation.iterator_roots, Rc::from(key)) {
+                    if !lock_subtree(
+                        &mut self.generations.last_mut().expect("foo").iterator_roots,
+                        Rc::from(key),
+                    ) {
                         return Err(TooManyIterators);
                     }
                     return Ok(Some(Iterator {
@@ -1272,7 +1274,10 @@ impl<V> MutableTrie<V> {
                 FollowStem::KeyIsPrefix {
                     stem_step,
                 } => {
-                    if !lock_subtree(&mut generation.iterator_roots, Rc::from(key)) {
+                    if !lock_subtree(
+                        &mut self.generations.last_mut().expect("foo").iterator_roots,
+                        Rc::from(key),
+                    ) {
                         return Err(TooManyIterators);
                     }
                     let stem_slice = stem_iter.as_slice();
@@ -1841,12 +1846,8 @@ impl<V> MutableTrie<V> {
         key: &[Key],
         new_value: V,
     ) -> Result<(EntryId, Option<EntryId>), AttemptToModifyLockedArea> {
-        let generation = self
-            .generations
-            .last_mut()
-            .cloned()
-            .expect("There should always be at least 1 generation.");
-        // todo avoid the clone?
+        let generation =
+            self.generations.last_mut().expect("There should always be at least 1 generation.");
         // if the tree is empty we must create a new root
         let mut node_idx = if let Some(root) = generation.roots {
             root
