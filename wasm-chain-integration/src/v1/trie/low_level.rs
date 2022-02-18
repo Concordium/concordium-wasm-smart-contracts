@@ -1841,8 +1841,7 @@ impl<V> MutableTrie<V> {
         key: &[Key],
         new_value: V,
     ) -> Result<(EntryId, Option<EntryId>), AttemptToModifyLockedArea> {
-        let mut key_iter = key.iter();
-        let mut generation = self
+        let generation = self
             .generations
             .last_mut()
             .cloned()
@@ -1870,17 +1869,22 @@ impl<V> MutableTrie<V> {
                     value:      tinyvec::TinyVec::new(),
                 },
             });
-            generation.roots = Some(root_idx);
+            self.generations.last_mut().expect("We already checked the list is not empty").roots =
+                Some(root_idx);
             return Ok((entry_idx, None));
         };
-        let iterator_roots = &generation.iterator_roots;
-        check_subtree_locked(SubtreeAction::InsertOrDelete, iterator_roots, Rc::from(key))?;
+        check_subtree_locked(
+            SubtreeAction::InsertOrDelete,
+            &generation.iterator_roots,
+            Rc::from(key),
+        )?;
         let owned_nodes = &mut self.nodes;
         let borrowed_values = &mut self.borrowed_values;
         let entries = &mut self.entries;
         // the parent node index and the index of the parents child we're visiting.
         let mut parent_node_idxs: Option<(usize, usize)> = None;
         let generation_idx = owned_nodes[node_idx].generation;
+        let mut key_iter = key.iter();
         loop {
             let key_slice = key_iter.as_slice();
             let owned_nodes_len = owned_nodes.len();
