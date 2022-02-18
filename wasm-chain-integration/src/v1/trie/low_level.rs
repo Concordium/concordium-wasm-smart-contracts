@@ -1493,16 +1493,17 @@ impl<V> MutableTrie<V> {
         } else {
             return Ok(false);
         };
+        let generation = owned_nodes[node_idx].generation;
         let iterator_roots = &mut self.iterator_roots;
+        if is_subtree_locked(
+            SubtreeAction::InsertOrDelete,
+            &iterator_roots[generation as usize],
+            key,
+        ) {
+            return Err(AttemptToModifyLockedArea);
+        }
         loop {
             let node = unsafe { owned_nodes.get_unchecked_mut(node_idx) };
-            if is_subtree_locked(
-                SubtreeAction::InsertOrDelete,
-                &iterator_roots[node.generation as usize],
-                key,
-            ) {
-                return Err(AttemptToModifyLockedArea);
-            }
             match follow_stem(&mut key_iter, &mut node.path.as_ref().iter()) {
                 FollowStem::Equal => {
                     // we found it, delete the value first and save it for returning.
@@ -1666,16 +1667,15 @@ impl<V> MutableTrie<V> {
         } else {
             return Ok(Ok(false));
         };
+
+        let generation = owned_nodes[node_idx].generation;
         let iterator_roots = &mut self.iterator_roots;
+        if is_subtree_locked(SubtreeAction::DeletePrefix, &iterator_roots[generation as usize], key)
+        {
+            return Ok(Err(AttemptToModifyLockedArea));
+        }
         loop {
             let node = unsafe { owned_nodes.get_unchecked_mut(node_idx) };
-            if is_subtree_locked(
-                SubtreeAction::DeletePrefix,
-                &iterator_roots[node.generation as usize],
-                key,
-            ) {
-                return Ok(Err(AttemptToModifyLockedArea));
-            }
             match follow_stem(&mut key_iter, &mut node.path.as_ref().iter()) {
                 FollowStem::StemIsPrefix {
                     key_step,
