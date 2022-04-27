@@ -1,11 +1,14 @@
 # Changelog
 
 ## Unreleased changes
+
 - Add support for V1 contract builds, testing, and execution.
 - The output of `cargo concordium build` is now versioned.
 - Support contracts written with Rust edition 2021.
+- Double printing of warning messages during build with `--schema-embed` is prevented.
 
 ## 1.1.1
+
 - Clarify that energy units used by `cargo-concordium` are "interpreter energy"
   and not the same as NRG.
 - Allow the user to only specify the necessary fields in the JSON context files
