@@ -173,12 +173,20 @@ pub fn build_contract(
 // Build a contract and its schema if needed.
 // When `with-schema` is `true`, the contract is built with the schema.
 // when `quiet` is `true`, the output is suppressed.
-fn build_contract_with_cargo(cargo_args: &[String], with_schema: bool, quiet: bool) -> anyhow::Result<()> {
+fn build_contract_with_cargo(
+    cargo_args: &[String],
+    with_schema: bool,
+    quiet: bool,
+) -> anyhow::Result<()> {
     let mut cargo_args = cargo_args.to_vec();
     if with_schema {
         cargo_args.extend(["--features".into(), "concordium-std/build-schema".into()]);
     }
-    let stdio = if quiet { Stdio::null } else { Stdio::inherit };
+    let stdio = if quiet {
+        Stdio::null
+    } else {
+        Stdio::inherit
+    };
     let result = Command::new("cargo")
         .arg("build")
         .args(&["--target", "wasm32-unknown-unknown"])
@@ -189,9 +197,10 @@ fn build_contract_with_cargo(cargo_args: &[String], with_schema: bool, quiet: bo
         .stderr(stdio())
         .output()
         .context("Could not use cargo build.")?;
-    Ok(if !result.status.success() {
+    if !result.status.success() {
         anyhow::bail!("Compilation failed.")
-    })
+    }
+    Ok(())
 }
 
 /// Check that exports of module conform to the specification so that they will
