@@ -58,7 +58,7 @@ pub fn build_contract(
     // This assignment is not actually unused. It is used via the custom_section which retains a
     // reference to this vector, which is why it has to be here. This is a bit ugly, but not as
     // ugly as alternatives.
-    let mut schema_bytes = Vec::new();
+    let schema_bytes;
     /* if none do not build. If Some(true) then embed, otherwise
      * just build and return */
     let schema = match version {
@@ -103,20 +103,7 @@ pub fn build_contract(
     let manifest = Manifest::from_path("Cargo.toml").context("Could not read Cargo.toml.")?;
     let package = manifest.package.context("Manifest needs to specify [package]")?;
 
-    let result = Command::new("cargo")
-        .arg("build")
-        .args(&["--target", "wasm32-unknown-unknown"])
-        .args(&["--release"])
-        .args(&["--target-dir", "target/concordium"])
-        .args(cargo_args)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .output()
-        .context("Could not use cargo build.")?;
-
-    if !result.status.success() {
-        anyhow::bail!("Compilation failed.")
-    }
+    build_contract_with_cargo(cargo_args, false, true)?;
 
     let filename = format!(
         "target/concordium/wasm32-unknown-unknown/release/{}.wasm",
@@ -181,6 +168,30 @@ pub fn build_contract(
     let total_module_len = output_bytes.len();
     fs::write(out_filename, output_bytes)?;
     Ok((total_module_len, return_schema))
+}
+
+// Build a contract and its schema if needed.
+// When `with-schema` is `true`, the contract is built with the schema.
+// when `quiet` is `true`, the output is suppressed.
+fn build_contract_with_cargo(cargo_args: &[String], with_schema: bool, quiet: bool) -> anyhow::Result<()> {
+    let mut cargo_args = cargo_args.to_vec();
+    if with_schema {
+        cargo_args.extend(["--features".into(), "concordium-std/build-schema".into()]);
+    }
+    let stdio = if quiet { Stdio::null } else { Stdio::inherit };
+    let result = Command::new("cargo")
+        .arg("build")
+        .args(&["--target", "wasm32-unknown-unknown"])
+        .args(&["--release"])
+        .args(&["--target-dir", "target/concordium"])
+        .args(&cargo_args)
+        .stdout(stdio())
+        .stderr(stdio())
+        .output()
+        .context("Could not use cargo build.")?;
+    Ok(if !result.status.success() {
+        anyhow::bail!("Compilation failed.")
+    })
 }
 
 /// Check that exports of module conform to the specification so that they will
@@ -285,21 +296,7 @@ pub fn build_contract_schema<A>(
     let manifest = Manifest::from_path("Cargo.toml").context("Could not read Cargo.toml.")?;
     let package = manifest.package.context("Manifest needs to specify [package]")?;
 
-    let result = Command::new("cargo")
-        .arg("build")
-        .args(&["--target", "wasm32-unknown-unknown"])
-        .arg("--release")
-        .args(&["--features", "concordium-std/build-schema"])
-        .args(&["--target-dir", "target/concordium"])
-        .args(cargo_args)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .output()
-        .context("Could not run cargo build.")?;
-
-    if !result.status.success() {
-        anyhow::bail!("Compilation failed.");
-    }
+    build_contract_with_cargo(cargo_args, true, false)?;
 
     let filename = format!(
         "target/concordium/wasm32-unknown-unknown/release/{}.wasm",
