@@ -197,9 +197,7 @@ fn build_contract_with_cargo(
         .stderr(stdio())
         .output()
         .context("Could not use cargo build.")?;
-    if !result.status.success() {
-        anyhow::bail!("Compilation failed.")
-    }
+    anyhow::ensure!(result.status.success(), "Compilation failed.");
     Ok(())
 }
 
