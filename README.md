@@ -1,3 +1,5 @@
+**The contents of this repository have been moved to [smart-contract-tools](https://github.com/Concordium/concordium-smart-contract-tools) and [concordium-base/smart-contracts](https://github.com/Concordium/concordium-base/tree/main/smart-contracts).**
+
 # Contributing
 
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](https://github.com/Concordium/.github/blob/main/.github/CODE_OF_CONDUCT.md)
